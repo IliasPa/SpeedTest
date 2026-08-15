@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>Speed Test — how fast is your internet, really?</title>
+<meta name="description" content="A fast, frugal internet speed test. Measures download, upload, ping and jitter, stops as soon as the result is stable, and tells you what your connection can actually do.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<main class="wrap">
+
+  <header class="head">
+    <h1><span class="bolt">⚡</span> Speed Test</h1>
+    <p class="sub">Measures only as much as it needs, then stops.</p>
+  </header>
+
+  <!-- ── Gauge ─────────────────────────────────────────── -->
+  <section class="gauge-box">
+    <svg class="gauge" viewBox="0 0 240 200" aria-hidden="true">
+      <path class="g-track" d="M 56.36 183.64 A 90 90 0 1 1 183.64 183.64" />
+      <path class="g-value" id="gaugeArc" d="M 56.36 183.64 A 90 90 0 1 1 183.64 183.64" />
+      <g class="g-ticks">
+        <line x1="48.8" y1="146.6" x2="41.3" y2="149.4" />
+        <line x1="83.6" y1="53.3"  x2="79.8" y2="46.3" />
+        <line x1="180.8" y1="74.4" x2="187.2" y2="69.6" />
+      </g>
+    </svg>
+
+    <div class="readout">
+      <div class="value" id="value">—</div>
+      <div class="unit" id="unit">Mbps</div>
+      <div class="phase" id="phase">Ready when you are</div>
+    </div>
+  </section>
+
+  <button id="go" class="go">Start test</button>
+
+  <!-- ── Results ───────────────────────────────────────── -->
+  <section class="tiles" id="tiles" hidden>
+    <div class="tile">
+      <span class="t-label">Download</span>
+      <span class="t-value"><b id="rDown">—</b> <i>Mbps</i></span>
+    </div>
+    <div class="tile">
+      <span class="t-label">Upload</span>
+      <span class="t-value"><b id="rUp">—</b> <i>Mbps</i></span>
+    </div>
+    <div class="tile">
+      <span class="t-label">Ping</span>
+      <span class="t-value"><b id="rPing">—</b> <i>ms</i></span>
+    </div>
+    <div class="tile">
+      <span class="t-label">Jitter</span>
+      <span class="t-value"><b id="rJitter">—</b> <i>ms</i></span>
+    </div>
+  </section>
+
+  <section class="verdict" id="verdict" hidden>
+    <h2 id="grade"></h2>
+    <p id="gradeNote"></p>
+  </section>
+
+  <!-- ── What you can do ───────────────────────────────── -->
+  <section class="card" id="canDo" hidden>
+    <h3>What you can do</h3>
+    <ul class="acts" id="acts"></ul>
+  </section>
+
+  <section class="card" id="timings" hidden>
+    <h3>How long things take</h3>
+    <ul class="times" id="times"></ul>
+  </section>
+
+  <section class="card" id="household" hidden>
+    <h3>At the same time</h3>
+    <ul class="sim" id="sim"></ul>
+  </section>
+
+  <!-- ── Footer ────────────────────────────────────────── -->
+  <footer class="foot">
+    <p id="meta" class="meta"></p>
+    <p id="usage" class="usage"></p>
+    <p class="about">
+      Test data is served by <a href="https://speed.cloudflare.com" rel="noopener">Cloudflare's public speed endpoints</a>;
+      this page is static and stores nothing.
+      <a href="https://github.com/IliasPa/SpeedTest" rel="noopener">Source</a>.
+    </p>
+  </footer>
+
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

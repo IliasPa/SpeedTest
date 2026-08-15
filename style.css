@@ -1,0 +1,297 @@
+/* ── Tokens ─────────────────────────────────────────────── */
+:root {
+  --bg:        #0d1017;
+  --bg-card:   #161a23;
+  --bg-tile:   #1b202b;
+  --line:      #262c38;
+  --fg:        #e8ecf4;
+  --fg-dim:    #8b95a8;
+  --fg-faint:  #5c6577;
+  --accent:    #ffd233;
+  --accent-2:  #38e0a5;
+  --bad:       #ff6b6b;
+  --radius:    14px;
+  --maxw:      620px;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg:       #f6f7fa;
+    --bg-card:  #ffffff;
+    --bg-tile:  #ffffff;
+    --line:     #e3e6ee;
+    --fg:       #131722;
+    --fg-dim:   #5b6478;
+    --fg-faint: #8a92a4;
+    --accent:   #d9a300;
+    --accent-2: #04996a;
+    --bad:      #d63a3a;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 400 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+a:hover { color: var(--accent); }
+
+.wrap {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 32px 20px 64px;
+}
+
+/* ── Header ─────────────────────────────────────────────── */
+.head { text-align: center; margin-bottom: 8px; }
+
+.head h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.bolt { color: var(--accent); }
+
+.sub {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--fg-dim);
+}
+
+/* ── Gauge ──────────────────────────────────────────────── */
+.gauge-box {
+  position: relative;
+  margin: 12px auto 0;
+  max-width: 320px;
+}
+
+.gauge { display: block; width: 100%; height: auto; overflow: visible; }
+
+.g-track,
+.g-value {
+  fill: none;
+  stroke-width: 12;
+  stroke-linecap: round;
+}
+
+.g-track { stroke: var(--line); }
+
+.g-value {
+  stroke: var(--accent);
+  stroke-dasharray: 424.12;
+  stroke-dashoffset: 424.12;
+  transition: stroke-dashoffset .18s linear, stroke .3s ease;
+}
+
+.g-value.up { stroke: var(--accent-2); }
+
+.g-ticks line { stroke: var(--fg-faint); stroke-width: 2; stroke-linecap: round; }
+
+.readout {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 46%;
+  transform: translateY(-50%);
+  text-align: center;
+  pointer-events: none;
+}
+
+.value {
+  font-size: 52px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.unit {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--fg-dim);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.phase {
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--fg-faint);
+  min-height: 1.4em;
+}
+
+/* ── Button ─────────────────────────────────────────────── */
+.go {
+  display: block;
+  width: 100%;
+  max-width: 260px;
+  margin: 4px auto 0;
+  padding: 14px 20px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #16181d;
+  font: inherit;
+  font-weight: 650;
+  font-size: 16px;
+  cursor: pointer;
+  transition: transform .12s ease, opacity .2s ease;
+}
+
+.go:hover  { transform: translateY(-1px); }
+.go:active { transform: translateY(0); }
+
+.go:disabled {
+  opacity: .45;
+  cursor: default;
+  transform: none;
+}
+
+/* ── Result tiles ───────────────────────────────────────── */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 28px;
+}
+
+@media (max-width: 460px) {
+  .tiles { grid-template-columns: repeat(2, 1fr); }
+}
+
+.tile {
+  background: var(--bg-tile);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 10px;
+  text-align: center;
+}
+
+.t-label {
+  display: block;
+  font-size: 11px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+}
+
+.t-value {
+  display: block;
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.t-value b { font-size: 21px; font-weight: 650; }
+.t-value i { font-style: normal; font-size: 12px; color: var(--fg-dim); }
+
+/* ── Verdict ────────────────────────────────────────────── */
+.verdict {
+  margin-top: 28px;
+  text-align: center;
+}
+
+.verdict h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.verdict p {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--fg-dim);
+}
+
+/* ── Cards ──────────────────────────────────────────────── */
+.card {
+  margin-top: 24px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px 18px 8px;
+}
+
+.card h3 {
+  margin: 0 0 12px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+}
+
+.card ul { list-style: none; margin: 0; padding: 0; }
+
+.card li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.card li:first-child { border-top: 0; }
+
+.mark {
+  flex: 0 0 auto;
+  width: 18px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.mark.yes { color: var(--accent-2); }
+.mark.no  { color: var(--bad); }
+
+.body { flex: 1 1 auto; min-width: 0; }
+
+.name { font-size: 15px; }
+
+.name.off { color: var(--fg-dim); }
+
+.note {
+  display: block;
+  font-size: 12.5px;
+  color: var(--fg-faint);
+  margin-top: 2px;
+}
+
+.amount {
+  flex: 0 0 auto;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+  white-space: nowrap;
+}
+
+.amount.dim { color: var(--fg-dim); }
+
+/* ── Footer ─────────────────────────────────────────────── */
+.foot {
+  margin-top: 32px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--fg-faint);
+}
+
+.foot p { margin: 5px 0; }
+
+.meta  { color: var(--fg-dim); }
+.about { margin-top: 14px !important; line-height: 1.7; }
+
+/* ── Motion ─────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
