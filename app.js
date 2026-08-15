@@ -241,10 +241,13 @@ async function measureDownload(onProgress) {
   const minMs    = fast ? 900 : c.minMs;
   const minRates = fast ? 5   : 10;
 
-  // Per-request size: roughly chunkMs worth of data on one stream.
+  // Per-request size: about chunkMs worth of data for one stream, with
+  // headroom. Asking for too much is free — the transfer is aborted long
+  // before it finishes — whereas asking for too little stalls the pipe
+  // every time a request ends and a new one has to be opened.
   const chunk = Math.round(clamp(
-    (probeBps * streams * 1.6) * (c.chunkMs / 1000) / streams,
-    512 << 10,
+    probeBps * 2 * (c.chunkMs / 1000),
+    1 << 20,
     100 << 20
   ));
 
