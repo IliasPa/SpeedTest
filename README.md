@@ -17,8 +17,11 @@ confidence. Most speed tests ignore this and push a fixed 100–500 MB at you re
 
 This one:
 
-1. **Probes** with 1 MB to get a rough idea of the line.
+1. **Probes for 600 ms** — capped by *time*, not by size. A fixed 1 MB probe is over in an
+   instant on fibre but costs a slow line four seconds before measuring even begins. The
+   estimate is taken from the second half of the probe, skipping most of the slow-start ramp.
 2. **Sizes the real run** from that probe — how many parallel streams, how big each request.
+   The upload probe is sized from the download result, since a POST can't be cut short.
 3. **Throws away the ramp-up.** TCP slow start makes the first ~700 ms meaningless, so
    throughput is sampled over a sliding window after it.
 4. **Aborts the moment it settles.** Once ten consecutive samples agree within 5 %, the
@@ -28,6 +31,20 @@ A 4 Mbps line finishes in about 3 MB. A 100 Mbps line uses roughly 30 MB. Even a
 connection is capped at 120 MB — a fifth of what a conventional test would spend.
 
 The page shows exactly how much it used, so you can check the claim.
+
+## Results arrive before the test ends
+
+Five of the ten activities never look at upload at all, and neither do the three download
+transfer estimates or the overall grade. All of that renders the moment download finishes,
+while upload is still running.
+
+Of the five rows that do depend on upload, any already ruled out by download or ping
+resolves immediately too — a line too slow for a group call is too slow whatever its
+upload turns out to be. Only the genuinely undecided ones wait, showing `·  checking
+upload…` until it lands.
+
+Measured over three runs each on the same 3 Mbps line: the answer reaches the screen in
+**6.4 s** versus **12.6 s** before, and the whole test finishes in 9.2 s versus 12.6 s.
 
 ## What it measures
 

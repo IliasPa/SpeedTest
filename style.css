@@ -160,11 +160,54 @@ a:hover { color: var(--accent); }
 }
 
 /* ── Result tiles ───────────────────────────────────────── */
+.tiles-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 28px 2px 10px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+}
+
+.info {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--fg-faint);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--fg-dim);
+  font: italic 600 12px/1 Georgia, "Times New Roman", serif;
+  cursor: pointer;
+  transition: color .15s ease, border-color .15s ease, background .15s ease;
+}
+
+.info:hover,
+.info[aria-expanded="true"] {
+  color: var(--bg);
+  background: var(--fg-dim);
+  border-color: var(--fg-dim);
+}
+
+/* Reachable by screen readers, invisible on screen. */
+.sr {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .tiles {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
-  margin-top: 28px;
 }
 
 @media (max-width: 460px) {
@@ -195,6 +238,26 @@ a:hover { color: var(--accent); }
 
 .t-value b { font-size: 21px; font-weight: 650; }
 .t-value i { font-style: normal; font-size: 12px; color: var(--fg-dim); }
+
+/* ── Glossary ───────────────────────────────────────────── */
+.glossary { margin-top: 10px; padding-bottom: 18px; }
+
+.glossary dl { margin: 0; }
+
+.glossary dt {
+  font-size: 14px;
+  font-weight: 650;
+  margin-top: 14px;
+}
+
+.glossary dt:first-of-type { margin-top: 0; }
+
+.glossary dd {
+  margin: 3px 0 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--fg-dim);
+}
 
 /* ── Verdict ────────────────────────────────────────────── */
 .verdict {
@@ -252,8 +315,9 @@ a:hover { color: var(--accent); }
   line-height: 1.4;
 }
 
-.mark.yes { color: var(--accent-2); }
-.mark.no  { color: var(--bad); }
+.mark.yes  { color: var(--accent-2); }
+.mark.no   { color: var(--bad); }
+.mark.wait { color: var(--fg-faint); }
 
 .body { flex: 1 1 auto; min-width: 0; }
 

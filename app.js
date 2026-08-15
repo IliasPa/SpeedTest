@@ -16,7 +16,8 @@ const CFG = {
   ping: { count: 10, warmup: 2, minSamples: 5, maxMs: 3500, timeoutMs: 3000 },
 
   down: {
-    probeBytes: 1 << 20,      // 1 MB sighting shot
+    probeMs:    600,          // the probe is capped by time, not by size:
+    probeBytes: 8 << 20,      // a fixed 1 MB costs a slow line seconds
     warmupMs:   700,          // ignored: TCP slow start / TLS ramp
     minMs:      1600,         // never trust a shorter sample
     maxMs:      7000,
@@ -29,7 +30,9 @@ const CFG = {
   },
 
   up: {
-    probeBytes: 256 << 10,
+    probeMs:    400,          // target duration; the size is derived from
+    probeMin:   64 << 10,     // the download result, since a blind POST
+    probeMax:   2 << 20,      // cannot be cut short once it is in flight
     warmupMs:   600,
     minMs:      1800,
     maxMs:      7000,
@@ -219,15 +222,36 @@ async function measureDownload(onProgress) {
   const c = CFG.down;
   const sampler = new Sampler();
 
-  /* ── Probe: one small stream to size the real run ── */
+  /* ── Probe: a short look at the line, to size the real run ──
+     Capped by time rather than by size. A fixed 1 MB is over in an
+     instant on fibre but costs a slow line several seconds before the
+     measurement has even started. Whatever arrives inside probeMs is
+     enough to pick a stream count and a request size. */
   const probeCtl = new AbortController();
   sampler.start();
   const pStart = now();
-  await streamDown(c.probeBytes, probeCtl.signal, n => {
-    sampler.add(n);
-    onProgress(toMbps(sampler.tick(c.windowMs)), sampler.bytes);
-  });
-  const probeBps = sampler.bytes / ((now() - pStart) / 1000);
+  let half = null;
+
+  try {
+    await streamDown(c.probeBytes, probeCtl.signal, n => {
+      sampler.add(n);
+      const el = now() - pStart;
+
+      // Note the halfway point, so the estimate can be taken from the
+      // second half alone and skip most of the slow-start ramp.
+      if (!half && el >= c.probeMs / 2) half = { t: el, bytes: sampler.bytes };
+      if (el >= c.probeMs) probeCtl.abort();
+
+      onProgress(toMbps(sampler.tick(c.windowMs)), sampler.bytes);
+    });
+  } catch (e) {
+    if (!isAbort(e)) throw e;
+  }
+
+  const pEl = now() - pStart;
+  const probeBps = half && pEl > half.t
+    ? (sampler.bytes - half.bytes) / ((pEl - half.t) / 1000)
+    : sampler.bytes / (pEl / 1000);
 
   /* ── Size the measurement from the probe ── */
   const est = toMbps(probeBps);
@@ -380,18 +404,27 @@ async function postStream(total, signal, onChunk) {
   await res.arrayBuffer();
 }
 
-async function measureUpload(onProgress) {
+async function measureUpload(downBps, onProgress) {
   const c = CFG.up;
 
-  /* ── Probe: one small POST to size the real run ── */
+  /* ── Probe: one small POST to size the real run ──
+     A POST cannot be cut short usefully — aborting it tells us nothing
+     about how much got through — so instead of capping its duration we
+     pick a size that should take about probeMs. Home lines upload at a
+     fraction of what they download, so guess an eighth and let the
+     measurement below correct it. */
+  const probeBytes = Math.round(clamp(
+    (downBps / 8) * (c.probeMs / 1000), c.probeMin, c.probeMax
+  ));
+
   const probeCtl = new AbortController();
   const pStart = now();
-  await postBlob(payload(c.probeBytes), probeCtl.signal);
-  const probeBps = c.probeBytes / ((now() - pStart) / 1000);
+  await postBlob(payload(probeBytes), probeCtl.signal);
+  const probeBps = probeBytes / ((now() - pStart) / 1000);
 
   const est = toMbps(probeBps);
   const streams = est < 10 ? 2 : est < 100 ? 3 : 5;
-  let spent = c.probeBytes;
+  let spent = probeBytes;
 
   onProgress(est, spent);
 
@@ -571,27 +604,35 @@ function grade(down, up, ping) {
   return ['Blazing', 'Gigabit-class. Nothing you do day to day will be the bottleneck.'];
 }
 
+/* `up` is null while the upload phase is still running. Anything that
+   depends on it is marked pending rather than guessed at. */
 function reason(need, down, up, ping) {
   const missing = [];
-  if (need.down && down < need.down) missing.push(`${need.down} Mbps down`);
-  if (need.up   && up   < need.up)   missing.push(`${need.up} Mbps up`);
-  if (need.ping && ping > need.ping) missing.push(`ping under ${need.ping} ms`);
+  if (need.down && down < need.down)         missing.push(`${need.down} Mbps down`);
+  if (need.up && up !== null && up < need.up) missing.push(`${need.up} Mbps up`);
+  if (need.ping && ping > need.ping)         missing.push(`ping under ${need.ping} ms`);
   return missing.length ? 'needs ' + missing.join(' · ') : null;
 }
 
 function renderResults(down, up, ping, jitter) {
+  const waiting = up === null;
+
   /* Activities */
   const acts = $('acts');
   acts.innerHTML = '';
   for (const a of ACTIVITIES) {
     const missing = reason(a.need, down, up, ping);
-    const ok = !missing;
+
+    // Only pending if upload is the one thing left that could fail it.
+    const pending = waiting && !!a.need.up && !missing;
+    const ok = !missing && !pending;
+
     const li = document.createElement('li');
     li.innerHTML = `
-      <span class="mark ${ok ? 'yes' : 'no'}">${ok ? '✓' : '✕'}</span>
+      <span class="mark ${pending ? 'wait' : ok ? 'yes' : 'no'}">${pending ? '·' : ok ? '✓' : '✕'}</span>
       <span class="body">
-        <span class="name${ok ? '' : ' off'}">${a.icon} ${a.name}</span>
-        <span class="note">${ok ? a.note : missing}</span>
+        <span class="name${ok || pending ? '' : ' off'}">${a.icon} ${a.name}</span>
+        <span class="note">${pending ? 'checking upload…' : ok ? a.note : missing}</span>
       </span>`;
     acts.appendChild(li);
   }
@@ -600,8 +641,8 @@ function renderResults(down, up, ping, jitter) {
   const times = $('times');
   times.innerHTML = '';
   for (const t of TRANSFERS) {
+    const pending = waiting && t.dir === 'up';
     const mbps = t.dir === 'down' ? down : up;
-    const secs = (t.bytes * 8) / (mbps * 1e6);
     const li = document.createElement('li');
     li.innerHTML = `
       <span class="mark">${t.dir === 'down' ? '↓' : '↑'}</span>
@@ -609,7 +650,9 @@ function renderResults(down, up, ping, jitter) {
         <span class="name">${t.name}</span>
         ${t.note ? `<span class="note">${t.note}</span>` : ''}
       </span>
-      <span class="amount">${fmtDuration(secs)}</span>`;
+      <span class="amount${pending ? ' dim' : ''}">${
+        pending ? '…' : fmtDuration((t.bytes * 8) / (mbps * 1e6))
+      }</span>`;
     times.appendChild(li);
   }
 
@@ -617,19 +660,22 @@ function renderResults(down, up, ping, jitter) {
   const sim = $('sim');
   sim.innerHTML = '';
   const rows = [
-    ['📺', '4K streams',        Math.floor(down / 25)],
-    ['🎬', '1080p streams',     Math.floor(down / 5)],
-    ['💬', 'HD video calls',    Math.floor(Math.min(down / 3, up / 3))]
+    ['📺', '4K streams',     Math.floor(down / 25),                        false],
+    ['🎬', '1080p streams',  Math.floor(down / 5),                         false],
+    ['💬', 'HD video calls', waiting ? 0 : Math.floor(Math.min(down / 3, up / 3)), waiting]
   ];
-  for (const [icon, label, n] of rows) {
+  for (const [icon, label, n, pending] of rows) {
     const li = document.createElement('li');
     li.innerHTML = `
       <span class="mark">${icon}</span>
       <span class="body"><span class="name">${label}</span></span>
-      <span class="amount${n ? '' : ' dim'}">${n < 1 ? 'not really' : n >= 20 ? '20+' : n}</span>`;
+      <span class="amount${pending || !n ? ' dim' : ''}">${
+        pending ? '…' : n < 1 ? 'not really' : n >= 20 ? '20+' : n
+      }</span>`;
     sim.appendChild(li);
   }
 
+  // The grade reads download and ping only, so it is final either way.
   const [g, note] = grade(down, up, ping);
   $('grade').textContent = g;
   $('gradeNote').textContent = note;
@@ -676,7 +722,7 @@ function phase(text) { ui.phase.textContent = text; }
 async function run() {
   ui.go.disabled = true;
   ui.go.textContent = 'Testing…';
-  for (const id of ['tiles', 'verdict', 'canDo', 'timings', 'household']) $(id).hidden = true;
+  for (const id of ['tilesHead', 'tiles', 'verdict', 'canDo', 'timings', 'household']) $(id).hidden = true;
   $('meta').textContent = '';
   $('usage').textContent = '';
 
@@ -700,11 +746,18 @@ async function run() {
       phase(`Measuring download… ${fmtBytes(bytes)} used`);
     });
     $('rDown').textContent = fmtSpeed(dl.mbps);
+    $('tilesHead').hidden = false;
     $('tiles').hidden = false;
 
+    // Show everything download and ping already settle, and leave only
+    // the upload-dependent rows pending. Six of the ten activities, both
+    // download timings and the grade are final at this point.
+    renderResults(dl.mbps, null, lat.ping, lat.jitter);
+
     phase('Measuring upload…');
+    $('rUp').textContent = '…';
     const ulStart = totalBytes;
-    const ul = await measureUpload((mbps, bytes) => {
+    const ul = await measureUpload(dl.mbps * 1e6 / 8, (mbps, bytes) => {
       show(mbps, 'up');
       totalBytes = ulStart + bytes;
       phase(`Measuring upload… ${fmtBytes(totalBytes)} used`);
@@ -741,3 +794,10 @@ async function run() {
 }
 
 ui.go.addEventListener('click', run);
+
+/* The glossary stays where the reader left it across re-runs. */
+$('infoBtn').addEventListener('click', () => {
+  const open = $('glossary').hidden;
+  $('glossary').hidden = !open;
+  $('infoBtn').setAttribute('aria-expanded', String(open));
+});
