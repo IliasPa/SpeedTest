@@ -12,6 +12,11 @@
 
 const CF = 'https://speed.cloudflare.com';
 
+/* __down refuses anything from 100,000,000 bytes upward with a 403 that
+   carries no CORS headers, so the browser surfaces it as an opaque
+   network failure rather than a status code. Stay well under the line. */
+const MAX_DOWN_BYTES = 90 << 20;   // 94.4 MB
+
 const CFG = {
   ping: { count: 10, warmup: 2, minSamples: 5, maxMs: 3500, timeoutMs: 3000 },
 
@@ -204,8 +209,9 @@ async function measureLatency(onSample) {
    =========================================================== */
 
 async function streamDown(bytes, signal, onChunk) {
+  const want = Math.min(bytes, MAX_DOWN_BYTES);
   const res = await fetch(
-    `${CF}/__down?bytes=${bytes}&r=${Math.random()}`,
+    `${CF}/__down?bytes=${want}&r=${Math.random()}`,
     { cache: 'no-store', signal }
   );
   if (!res.ok) throw new Error('Download failed: HTTP ' + res.status);
@@ -272,7 +278,7 @@ async function measureDownload(onProgress) {
   const chunk = Math.round(clamp(
     probeBps * 2 * (c.chunkMs / 1000),
     1 << 20,
-    100 << 20
+    MAX_DOWN_BYTES
   ));
 
   /* ── Measure: parallel streams, abort as soon as it settles ── */
