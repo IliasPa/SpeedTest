@@ -27,10 +27,27 @@ This one:
 4. **Aborts the moment it settles.** Once ten consecutive samples agree within 5 %, the
    transfer is cancelled mid-flight. Nothing more is pulled.
 
-A 4 Mbps line finishes in about 3 MB. A 100 Mbps line uses roughly 30 MB. Even a gigabit
-connection is capped at 120 MB — a fifth of what a conventional test would spend.
+Measured: a 3 Mbps line finishes in about **3 MB**. A gigabit line spends about **190 MB**,
+because there is no way around it — measuring a gigabit means actually moving a gigabit.
+Download stops at 120 MB and upload at 60 MB, plus a little overshoot while the ceiling
+is noticed.
 
-The page shows exactly how much it used, so you can check the claim.
+So the saving is largest exactly where it matters most: the slower your connection, the
+less this costs you. The page prints what it used every run, so you can check the claim.
+
+## Data Saver
+
+If the browser reports that **Data Saver** is switched on, the test caps itself at roughly
+**22 MB** instead — about eight times lighter — and says so under the result.
+
+That is a deliberate trade, not a free win. Twenty-odd megabytes is not enough to see a
+fast line at full stretch, so the number reads low: on a 1.2 Gbps connection it reports
+around 650 Mbps. Someone who has turned Data Saver on has already said they would rather
+spend less, and this respects that.
+
+Only the explicit flag counts. Merely being on mobile data is not consent, and is not
+checked. Note that Safari and Firefox do not report the flag at all, so there the full
+test always runs.
 
 ## Results arrive before the test ends
 

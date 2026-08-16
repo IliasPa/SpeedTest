@@ -49,6 +49,20 @@ const CFG = {
   }
 };
 
+/* Data Saver is an explicit "don't spend my allowance" from the user, so
+   honour it: cap the test at roughly 20 MB and shorten the sampling
+   windows to fit. On a fast line that is not enough bytes to see full
+   speed, so the result reads low — a trade the user has already asked
+   for. Only the flag counts; being on mobile data is not consent. */
+const SAVE_DATA = !!(navigator.connection && navigator.connection.saveData);
+
+if (SAVE_DATA) {
+  // sampleMs also sets how often the byte ceiling is checked; at gigabit
+  // a 100 ms gap overshoots it by more than the whole budget.
+  Object.assign(CFG.down, { warmupMs: 250, minMs: 500, maxBytes: 11 << 20, sampleMs: 40 });
+  Object.assign(CFG.up,   { warmupMs: 250, minMs: 600, maxBytes:  5 << 20, sampleMs: 40 });
+}
+
 /* ── Small helpers ───────────────────────────────────────── */
 
 const now   = () => performance.now();
@@ -520,7 +534,7 @@ async function blindUpload(streams, perStream, spent, onProgress) {
   });
 
   while (!ctl.signal.aborted) {
-    await sleep(100);
+    await sleep(c.sampleMs);
     const elapsed = now() - t0;
     // Every stream must land several posts, or the bytes still in
     // flight would be a large share of what we are measuring.
@@ -728,7 +742,10 @@ function phase(text) { ui.phase.textContent = text; }
 async function run() {
   ui.go.disabled = true;
   ui.go.textContent = 'Testing…';
-  for (const id of ['tilesHead', 'tiles', 'verdict', 'canDo', 'timings', 'household']) $(id).hidden = true;
+  for (const id of ['tilesHead', 'tiles', 'explain', 'verdict', 'canDo', 'timings', 'household']) {
+    $(id).hidden = true;
+  }
+  closeExplain();
   $('meta').textContent = '';
   $('usage').textContent = '';
 
@@ -784,7 +801,9 @@ async function run() {
 
     const secs = (now() - started) / 1000;
     $('usage').textContent =
-      `${fmtBytes(totalBytes)} of data in ${secs.toFixed(1)} s — a typical speed test spends 5–20× that.`;
+      `${fmtBytes(totalBytes)} of data in ${secs.toFixed(1)} s` + (SAVE_DATA
+        ? ' — Data Saver is on, so the test stopped early. On a fast line that reads low.'
+        : ' — a typical speed test spends 5–20× that.');
 
   } catch (err) {
     console.error(err);
@@ -801,9 +820,63 @@ async function run() {
 
 ui.go.addEventListener('click', run);
 
-/* The glossary stays where the reader left it across re-runs. */
-$('infoBtn').addEventListener('click', () => {
-  const open = $('glossary').hidden;
-  $('glossary').hidden = !open;
-  $('infoBtn').setAttribute('aria-expanded', String(open));
-});
+/* ── Explanations ────────────────────────────────────────── */
+
+const EXPLAIN = {
+  down: ['Download',
+    'How fast data reaches you. It decides what video quality you can ' +
+    'stream and how quickly pages and files load — the number most people ' +
+    'mean by "internet speed".'],
+
+  up: ['Upload',
+    'How fast data leaves your device: video calls, sending files to cloud ' +
+    'storage, live streaming. Home connections are usually far slower ' +
+    'upward than downward, and that is normal.'],
+
+  ping: ['Ping',
+    'How long one message takes to reach the server and come back, in ' +
+    'milliseconds. Low ping is what makes a connection feel instant. Gaming ' +
+    'and calls care about this far more than about speed.'],
+
+  jitter: ['Jitter',
+    'How much the ping varies from one message to the next. Steady is good — ' +
+    'high jitter is what makes a call stutter or a game jump, even when the ' +
+    'ping and speed both look fine.']
+};
+
+const explainBtns = [...document.querySelectorAll('[data-explain]')];
+let openKey = null;
+
+/* Declared, not assigned, so run() can call it from higher up the file. */
+function closeExplain() {
+  for (const b of explainBtns) b.setAttribute('aria-expanded', 'false');
+  $('explain').hidden = true;
+  openKey = null;
+}
+
+for (const btn of explainBtns) {
+  btn.addEventListener('click', () => {
+    const key = btn.dataset.explain;
+    const closing = openKey === key;
+
+    closeExplain();
+    if (closing) return;
+
+    const [title, body] = EXPLAIN[key];
+    $('explainTitle').textContent = title;
+    $('explainBody').textContent = body;
+    $('explain').hidden = false;
+    btn.setAttribute('aria-expanded', 'true');
+    openKey = key;
+  });
+}
+
+/* Each card explains itself, in place. */
+for (const btn of document.querySelectorAll('[data-note]')) {
+  btn.addEventListener('click', () => {
+    const note = $('note-' + btn.dataset.note);
+    const opening = note.hidden;
+    note.hidden = !opening;
+    btn.setAttribute('aria-expanded', String(opening));
+  });
+}

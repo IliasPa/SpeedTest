@@ -40,56 +40,54 @@
   <button id="go" class="go">Start test</button>
 
   <!-- ── Results ───────────────────────────────────────── -->
-  <div class="tiles-head" id="tilesHead" hidden>
-    <span>Your connection</span>
-    <button type="button" id="infoBtn" class="info"
-            aria-expanded="false" aria-controls="glossary">
-      <span aria-hidden="true">i</span>
-      <span class="sr">What do these numbers mean?</span>
-    </button>
-  </div>
+  <div class="tiles-head" id="tilesHead" hidden>Your connection</div>
 
   <section class="tiles" id="tiles" hidden>
     <div class="tile">
-      <span class="t-label">Download</span>
+      <span class="t-label">Download
+        <button type="button" class="info" data-explain="down"
+                aria-expanded="false" aria-controls="explain">
+          <span aria-hidden="true">i</span>
+          <span class="sr">What is download speed?</span>
+        </button>
+      </span>
       <span class="t-value"><b id="rDown">—</b> <i>Mbps</i></span>
     </div>
     <div class="tile">
-      <span class="t-label">Upload</span>
+      <span class="t-label">Upload
+        <button type="button" class="info" data-explain="up"
+                aria-expanded="false" aria-controls="explain">
+          <span aria-hidden="true">i</span>
+          <span class="sr">What is upload speed?</span>
+        </button>
+      </span>
       <span class="t-value"><b id="rUp">—</b> <i>Mbps</i></span>
     </div>
     <div class="tile">
-      <span class="t-label">Ping</span>
+      <span class="t-label">Ping
+        <button type="button" class="info" data-explain="ping"
+                aria-expanded="false" aria-controls="explain">
+          <span aria-hidden="true">i</span>
+          <span class="sr">What is ping?</span>
+        </button>
+      </span>
       <span class="t-value"><b id="rPing">—</b> <i>ms</i></span>
     </div>
     <div class="tile">
-      <span class="t-label">Jitter</span>
+      <span class="t-label">Jitter
+        <button type="button" class="info" data-explain="jitter"
+                aria-expanded="false" aria-controls="explain">
+          <span aria-hidden="true">i</span>
+          <span class="sr">What is jitter?</span>
+        </button>
+      </span>
       <span class="t-value"><b id="rJitter">—</b> <i>ms</i></span>
     </div>
   </section>
 
-  <section class="card glossary" id="glossary" hidden>
-    <dl>
-      <dt>Download</dt>
-      <dd>How fast data reaches you. It decides what video quality you can
-          stream and how quickly pages and files load — the number most
-          people mean by "internet speed".</dd>
-
-      <dt>Upload</dt>
-      <dd>How fast data leaves your device: video calls, sending files to
-          cloud storage, live streaming. Home connections are usually far
-          slower upward than downward, and that is normal.</dd>
-
-      <dt>Ping</dt>
-      <dd>How long one message takes to reach the server and come back, in
-          milliseconds. Low ping is what makes a connection feel instant.
-          Gaming and calls care about this far more than about speed.</dd>
-
-      <dt>Jitter</dt>
-      <dd>How much the ping varies from one message to the next. Steady is
-          good — high jitter is what makes a call stutter or a game jump,
-          even when the ping and speed both look fine.</dd>
-    </dl>
+  <section class="card explain" id="explain" hidden>
+    <h4 id="explainTitle"></h4>
+    <p id="explainBody"></p>
   </section>
 
   <section class="verdict" id="verdict" hidden>
@@ -99,17 +97,50 @@
 
   <!-- ── What you can do ───────────────────────────────── -->
   <section class="card" id="canDo" hidden>
-    <h3>What you can do</h3>
+    <h3>What you can do
+      <button type="button" class="info" data-note="canDo"
+              aria-expanded="false" aria-controls="note-canDo">
+        <span aria-hidden="true">i</span>
+        <span class="sr">What does this list show?</span>
+      </button>
+    </h3>
+    <p class="card-note" id="note-canDo" hidden>
+      Each row checks your measured speed and ping against what that
+      activity actually needs. A tick means your connection clears the bar
+      with room to spare; a cross names the one thing that falls short.
+    </p>
     <ul class="acts" id="acts"></ul>
   </section>
 
   <section class="card" id="timings" hidden>
-    <h3>How long things take</h3>
+    <h3>How long things take
+      <button type="button" class="info" data-note="timings"
+              aria-expanded="false" aria-controls="note-timings">
+        <span aria-hidden="true">i</span>
+        <span class="sr">How are these times worked out?</span>
+      </button>
+    </h3>
+    <p class="card-note" id="note-timings" hidden>
+      File size divided by the speed just measured. Treat these as a best
+      case: the far end, your disk and your Wi-Fi each add limits of their
+      own, so real transfers usually take a little longer.
+    </p>
     <ul class="times" id="times"></ul>
   </section>
 
   <section class="card" id="household" hidden>
-    <h3>At the same time</h3>
+    <h3>At the same time
+      <button type="button" class="info" data-note="household"
+              aria-expanded="false" aria-controls="note-household">
+        <span aria-hidden="true">i</span>
+        <span class="sr">What does this mean?</span>
+      </button>
+    </h3>
+    <p class="card-note" id="note-household" hidden>
+      How many of each your line could carry at once, everyone sharing it
+      together — one person on 4K in the living room while another is on a
+      call upstairs.
+    </p>
     <ul class="sim" id="sim"></ul>
   </section>
 
