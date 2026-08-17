@@ -137,11 +137,18 @@ a:hover { color: var(--accent); }
 
 /* ── Button ─────────────────────────────────────────────── */
 .go {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
   width: 100%;
   max-width: 320px;
+  /* Tall enough for two lines from the start, so the page below does not
+     shift when the data line appears partway through a run. */
+  min-height: 62px;
   margin: 6px auto 0;
-  padding: 14px 20px;
+  padding: 8px 20px;
   border: 1px solid transparent;
   border-radius: 999px;
   background: var(--accent);
@@ -154,6 +161,15 @@ a:hover { color: var(--accent); }
   transition: transform .12s ease, background .25s ease, color .25s ease,
               border-color .25s ease;
 }
+
+.go-sub {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: .01em;
+  opacity: .65;
+}
+
+.go-sub:empty { display: none; }
 
 .go:hover  { transform: translateY(-1px); }
 .go:active { transform: translateY(0); }

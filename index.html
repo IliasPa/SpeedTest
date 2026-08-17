@@ -37,8 +37,12 @@
   </section>
 
   <!-- The button doubles as the status line: it carries every phase
-       message, so the gauge holds nothing but the reading. -->
-  <button id="go" class="go">Ready when you are</button>
+       message, so the gauge holds nothing but the reading. The second
+       line reports data spent, and stays put once the test is done. -->
+  <button id="go" class="go">
+    <span class="go-main" id="goMain">Ready when you are</span>
+    <span class="go-sub" id="goSub"></span>
+  </button>
 
   <!-- ── Results ───────────────────────────────────────── -->
   <div class="tiles-head">Your connection</div>

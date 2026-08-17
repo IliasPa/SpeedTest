@@ -713,10 +713,12 @@ const LO = 0.5, HI = 1000;                // gauge range in Mbps (log scale)
 const SPAN = Math.log10(HI / LO);
 
 const ui = {
-  arc:   $('gaugeArc'),
-  value: $('value'),
-  unit:  $('unit'),
-  go:    $('go')
+  arc:    $('gaugeArc'),
+  value:  $('value'),
+  unit:   $('unit'),
+  go:     $('go'),
+  goMain: $('goMain'),
+  goSub:  $('goSub')
 };
 
 function setGauge(mbps) {
@@ -737,8 +739,12 @@ function showPing(ms) {
   setGauge(0);
 }
 
-/* The button is the status line. */
-function phase(text) { ui.go.textContent = text; }
+/* The button is the status line: phase on top, data spent underneath. */
+function phase(text) { ui.goMain.textContent = text; }
+
+function used(bytes) {
+  ui.goSub.textContent = bytes > 0 ? `${fmtBytes(bytes)} used` : '';
+}
 
 async function run() {
   ui.go.disabled = true;
@@ -749,6 +755,7 @@ async function run() {
   for (const id of ['rDown', 'rUp', 'rPing', 'rJitter']) $(id).textContent = '—';
   $('meta').textContent = '';
   $('usage').textContent = '';
+  used(0);   // clear last run's figure; it fills in again once bytes move
 
   const started = now();
   let totalBytes = 0;
@@ -768,7 +775,7 @@ async function run() {
     const dl = await measureDownload((mbps, bytes) => {
       show(mbps, 'down');
       totalBytes = bytes;
-      phase(`Measuring download… ${fmtBytes(bytes)} used`);
+      used(bytes);
     });
     $('rDown').textContent = fmtSpeed(dl.mbps);
 
@@ -783,7 +790,7 @@ async function run() {
     const ul = await measureUpload(dl.mbps * 1e6 / 8, (mbps, bytes) => {
       show(mbps, 'up');
       totalBytes = ulStart + bytes;
-      phase(`Measuring upload… ${fmtBytes(totalBytes)} used`);
+      used(totalBytes);
     });
     $('rUp').textContent = fmtSpeed(ul.mbps);
 
