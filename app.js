@@ -649,11 +649,12 @@ function renderResults(down, up, ping, jitter) {
 
     const li = document.createElement('li');
     li.innerHTML = `
-      <span class="mark ${pending ? 'wait' : ok ? 'yes' : 'no'}">${pending ? '·' : ok ? '✓' : '✕'}</span>
+      <span class="ico" aria-hidden="true">${a.icon}</span>
       <span class="body">
-        <span class="name${ok || pending ? '' : ' off'}">${a.icon} ${a.name}</span>
+        <span class="name${ok || pending ? '' : ' off'}">${a.name}</span>
         <span class="note">${pending ? 'checking upload…' : ok ? a.note : missing}</span>
-      </span>`;
+      </span>
+      <span class="mark ${pending ? 'wait' : ok ? 'yes' : 'no'}">${pending ? '·' : ok ? '✓' : '✕'}</span>`;
     acts.appendChild(li);
   }
 
@@ -715,7 +716,6 @@ const ui = {
   arc:   $('gaugeArc'),
   value: $('value'),
   unit:  $('unit'),
-  phase: $('phase'),
   go:    $('go')
 };
 
@@ -737,20 +737,22 @@ function showPing(ms) {
   setGauge(0);
 }
 
-function phase(text) { ui.phase.textContent = text; }
+/* The button is the status line. */
+function phase(text) { ui.go.textContent = text; }
 
 async function run() {
   ui.go.disabled = true;
-  ui.go.textContent = 'Testing…';
-  for (const id of ['tilesHead', 'tiles', 'explain', 'verdict', 'canDo', 'timings', 'household']) {
-    $(id).hidden = true;
-  }
-  closeExplain();
+
+  // The heading and the tiles are permanent fixtures; only the sections
+  // below them come and go, so the layout above never jumps.
+  for (const id of ['verdict', 'canDo', 'timings', 'household']) $(id).hidden = true;
+  for (const id of ['rDown', 'rUp', 'rPing', 'rJitter']) $(id).textContent = '—';
   $('meta').textContent = '';
   $('usage').textContent = '';
 
   const started = now();
   let totalBytes = 0;
+  let done = false;
 
   try {
     /* Location, in the background — never blocks the test. */
@@ -769,11 +771,9 @@ async function run() {
       phase(`Measuring download… ${fmtBytes(bytes)} used`);
     });
     $('rDown').textContent = fmtSpeed(dl.mbps);
-    $('tilesHead').hidden = false;
-    $('tiles').hidden = false;
 
     // Show everything download and ping already settle, and leave only
-    // the upload-dependent rows pending. Six of the ten activities, both
+    // the upload-dependent rows pending. Five of the ten activities, the
     // download timings and the grade are final at this point.
     renderResults(dl.mbps, null, lat.ping, lat.jitter);
 
@@ -788,9 +788,8 @@ async function run() {
     $('rUp').textContent = fmtSpeed(ul.mbps);
 
     show(dl.mbps, 'down');
-    phase('Done');
-
     renderResults(dl.mbps, ul.mbps, lat.ping, lat.jitter);
+    done = true;
 
     const w = await where;
     if (w) {
@@ -807,14 +806,13 @@ async function run() {
 
   } catch (err) {
     console.error(err);
-    phase('');
     ui.value.textContent = '—';
     ui.unit.textContent = 'error';
     $('meta').textContent =
       'Could not reach the test server. Check your connection, or disable a VPN / content blocker and try again.';
   } finally {
     ui.go.disabled = false;
-    ui.go.textContent = 'Test again';
+    phase(done ? 'Done — test again' : 'Something went wrong — try again');
   }
 }
 

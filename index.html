@@ -33,16 +33,17 @@
     <div class="readout">
       <div class="value" id="value">—</div>
       <div class="unit" id="unit">Mbps</div>
-      <div class="phase" id="phase">Ready when you are</div>
     </div>
   </section>
 
-  <button id="go" class="go">Start test</button>
+  <!-- The button doubles as the status line: it carries every phase
+       message, so the gauge holds nothing but the reading. -->
+  <button id="go" class="go">Ready when you are</button>
 
   <!-- ── Results ───────────────────────────────────────── -->
-  <div class="tiles-head" id="tilesHead" hidden>Your connection</div>
+  <div class="tiles-head">Your connection</div>
 
-  <section class="tiles" id="tiles" hidden>
+  <section class="tiles">
     <div class="tile">
       <span class="t-label">Download
         <button type="button" class="info" data-explain="down"

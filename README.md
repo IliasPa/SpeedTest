@@ -8,6 +8,8 @@ gaming, how long a 60 GB game takes.
 
 No build step, no dependencies, no tracking. Three static files.
 
+Version history and what is planned next: **[CHANGELOG.md](CHANGELOG.md)**.
+
 ---
 
 ## Why it uses so little data

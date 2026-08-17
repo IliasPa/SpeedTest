@@ -10,6 +10,10 @@
   --accent:    #ffd233;
   --accent-2:  #38e0a5;
   --bad:       #ff6b6b;
+  --yes-bg:    rgba(56, 224, 165, .13);
+  --no-bg:     rgba(255, 107, 107, .13);
+  --wait-bg:   rgba(255, 255, 255, .06);
+  --line-soft: rgba(255, 255, 255, .055);
   --radius:    14px;
   --maxw:      620px;
 }
@@ -26,6 +30,10 @@
     --accent:   #d9a300;
     --accent-2: #04996a;
     --bad:      #d63a3a;
+    --yes-bg:   rgba(4, 153, 106, .10);
+    --no-bg:    rgba(214, 58, 58, .09);
+    --wait-bg:  rgba(0, 0, 0, .05);
+    --line-soft: rgba(0, 0, 0, .055);
   }
 }
 
@@ -99,11 +107,13 @@ a:hover { color: var(--accent); }
 
 .g-ticks line { stroke: var(--fg-faint); stroke-width: 2; stroke-linecap: round; }
 
+/* The arc is drawn around (120,120) of a 240×200 viewBox, so the centre of
+   the circle sits at 60% of the box height, not at 50%. */
 .readout {
   position: absolute;
   left: 0;
   right: 0;
-  top: 46%;
+  top: 60%;
   transform: translateY(-50%);
   text-align: center;
   pointer-events: none;
@@ -125,36 +135,36 @@ a:hover { color: var(--accent); }
   text-transform: uppercase;
 }
 
-.phase {
-  margin-top: 14px;
-  font-size: 13px;
-  color: var(--fg-faint);
-  min-height: 1.4em;
-}
-
 /* ── Button ─────────────────────────────────────────────── */
 .go {
   display: block;
   width: 100%;
-  max-width: 260px;
-  margin: 4px auto 0;
+  max-width: 320px;
+  margin: 6px auto 0;
   padding: 14px 20px;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 999px;
   background: var(--accent);
   color: #16181d;
   font: inherit;
   font-weight: 650;
-  font-size: 16px;
+  font-size: 15.5px;
+  white-space: nowrap;
   cursor: pointer;
-  transition: transform .12s ease, opacity .2s ease;
+  transition: transform .12s ease, background .25s ease, color .25s ease,
+              border-color .25s ease;
 }
 
 .go:hover  { transform: translateY(-1px); }
 .go:active { transform: translateY(0); }
 
+/* While running it stops being a button and reads as a status strip —
+   still legible, but clearly not asking to be pressed. */
 .go:disabled {
-  opacity: .45;
+  background: var(--bg-tile);
+  border-color: var(--line);
+  color: var(--fg-dim);
+  font-weight: 500;
   cursor: default;
   transform: none;
 }
@@ -309,7 +319,7 @@ a:hover { color: var(--accent); }
   align-items: baseline;
   gap: 10px;
   padding: 10px 0;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--line-soft);
 }
 
 .card li:first-child { border-top: 0; }
@@ -324,6 +334,46 @@ a:hover { color: var(--accent); }
 .mark.yes  { color: var(--accent-2); }
 .mark.no   { color: var(--bad); }
 .mark.wait { color: var(--fg-faint); }
+
+/* ── Activity rows ──────────────────────────────────────────
+   A checklist: the emoji says what it is, the badge on the right
+   says yes or no, and the verdicts line up in one column so the
+   whole card can be read down its right edge. */
+.acts li {
+  align-items: center;
+  gap: 13px;
+  padding: 12px 0;
+}
+
+.acts .ico {
+  flex: 0 0 auto;
+  width: 24px;
+  font-size: 17px;
+  line-height: 1;
+  text-align: center;
+}
+
+.acts .name {
+  font-size: 14.5px;
+  font-weight: 500;
+}
+
+.acts .note { margin-top: 3px; }
+
+.acts .mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.acts .mark.yes  { background: var(--yes-bg);  color: var(--accent-2); }
+.acts .mark.no   { background: var(--no-bg);   color: var(--bad); }
+.acts .mark.wait { background: var(--wait-bg); color: var(--fg-faint); }
 
 .body { flex: 1 1 auto; min-width: 0; }
 
