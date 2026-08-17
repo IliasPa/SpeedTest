@@ -73,6 +73,15 @@ Measured over three runs each on the same 3 Mbps line: the answer reaches the sc
 | **Upload** | Same method where the browser can stream a request body (Chrome/Edge); elsewhere, short POSTs are timed whole |
 | **Ping** | Median round trip to a zero-byte endpoint, first two discarded for DNS/TLS |
 | **Jitter** | Mean absolute change between consecutive round trips |
+| **Range** | 10th–90th percentile of the throughput samples, shown whenever the line wandered |
+| **Delay under load** | Pinged continuously *while* the transfer saturates the line, compared with the idle ping. Graded A–F |
+| **Packet loss** | Read from the server's own TCP counters in its `Server-Timing` header — no extra bytes |
+
+Those last three matter more than they look. A connection can be fast and still be
+miserable to use: if latency climbs from 60 ms to 300 ms whenever anything downloads,
+every call stutters no matter how many megabits the headline claims. That is the number
+most speed tests never show you, and this one gets it free from traffic it is already
+moving.
 
 Upload is the awkward one. `fetch` normally gives no progress events for a request body,
 so a browser that can't stream one has to time complete POSTs — which under-reports

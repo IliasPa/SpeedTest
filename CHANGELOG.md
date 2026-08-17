@@ -1,11 +1,41 @@
 # Changelog
 
 Every change to this speed test, newest first. Each version lives in its own folder
-(`v0.0/`, `v0.1/`, `v0.2/`) and carries a matching git tag, so any version can be pulled
+(`v0.0/`, `v0.1/`, …) and carries a matching git tag, so any version can be pulled
 back up exactly as it shipped.
 
 The live site always serves whatever is newest on `main`:
 **[iliaspa.github.io/SpeedTest](https://iliaspa.github.io/SpeedTest/)**
+
+---
+
+## v0.3 — How far to trust it, and how it behaves under load
+
+Three additions, all aimed at the same thing: one speed figure is not enough to
+judge a connection by.
+
+**Every figure now carries its range.** The test always collected dozens of
+throughput samples and threw all but the middle one away. It now keeps the spread
+too and prints it under the number — *135 Mbps, ranged 78–194*. When a line holds
+steady the range is omitted, so seeing one is itself the signal.
+
+**Delay when the line is busy — bufferbloat.** Speed is measured on an idle line,
+but nobody uses an idle line. While the test saturates the connection it also
+pings continuously, and compares that with the idle ping. On the line this was
+built against: **63 ms idle → 312 ms under load** — a fast connection that still
+breaks up every call. Graded A to F.
+
+**Packet loss, for no extra data.** Cloudflare returns its kernel's TCP socket
+statistics in a `Server-Timing` header, and the counters accumulate over the life
+of a connection. After the transfer, that gives the number of packets sent and how
+many had to be sent again — real loss, read off traffic already being moved. A
+typical result: *0.16% — 49 of 30,910 packets resent*.
+
+All three appear in a new "When the line is busy" card, with its own explanation.
+
+*Known limitation:* Chromium sometimes spreads work over several connections, so
+the packet-loss sample occasionally comes back too small to be worth reporting —
+roughly one run in four. The row is then left out rather than guessed at.
 
 ---
 
@@ -124,6 +154,8 @@ Not built yet, roughly in order of what they would buy:
   one hiccup resets confidence, so a jittery line runs to the 7 s ceiling every time.
   Comparing two consecutive half-windows instead should settle far sooner on exactly those
   connections. Worth 1–2 s on an unstable line.
+- **A more reliable packet-loss read**, so the row stops disappearing on the runs where
+  Chromium spread the transfer across several connections.
 - **Warm the connection on page load.** DNS, TLS and the first couple of round trips could
   happen while the page is being read rather than after the button is pressed. Worth
   0.3–1.5 s, and the most on high-latency links.

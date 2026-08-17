@@ -265,6 +265,37 @@ a:hover { color: var(--accent); }
 .t-value b { font-size: 21px; font-weight: 650; }
 .t-value i { font-style: normal; font-size: 12px; color: var(--fg-dim); }
 
+/* How far the figure wandered while it was being measured. Reserves its
+   line whether filled or not, so the tiles never change height. */
+.t-range {
+  display: block;
+  margin-top: 3px;
+  min-height: 1.2em;
+  font-size: 10.5px;
+  letter-spacing: .01em;
+  color: var(--fg-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Under-load card ────────────────────────────────────── */
+.grade-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.grade-mark.yes  { background: var(--yes-bg);  color: var(--accent-2); }
+.grade-mark.no   { background: var(--no-bg);   color: var(--bad); }
+.grade-mark.wait { background: var(--wait-bg); color: var(--fg-dim); }
+
+#qual li { align-items: center; gap: 12px; padding: 11px 0; }
+
 /* ── Explanations ───────────────────────────────────────── */
 .explain { margin-top: 8px; padding: 16px 18px; }
 

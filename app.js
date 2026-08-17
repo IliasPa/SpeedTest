@@ -79,6 +79,24 @@ function median(a) {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
+/** Value below which p of the samples fall (p from 0 to 1). */
+function percentile(a, p) {
+  if (!a.length) return 0;
+  const s = [...a].sort((x, y) => x - y);
+  return s[clamp(Math.round((s.length - 1) * p), 0, s.length - 1)];
+}
+
+/**
+ * How far the throughput samples disagreed, as a fraction of the middle
+ * one. Quartiles rather than the full spread, so a single hiccup does
+ * not decide the answer on its own.
+ */
+function dispersion(a) {
+  if (a.length < 4) return 0;
+  const mid = percentile(a, 0.5);
+  return mid > 0 ? (percentile(a, 0.75) - percentile(a, 0.25)) / mid : 0;
+}
+
 /** Coefficient of variation — how much a set of samples disagrees. */
 function cov(a) {
   if (a.length < 2) return Infinity;
@@ -173,8 +191,97 @@ class Sampler {
 }
 
 /* ===========================================================
+   What the server's own TCP stack saw
+
+   Cloudflare returns kernel socket statistics on every response in a
+   Server-Timing header, and the counters accumulate over the life of
+   the connection. After a real transfer that yields the number of
+   segments it sent and how many it had to send again — a direct read
+   on packet loss, for no extra bytes at all.
+   =========================================================== */
+
+const tcp = { sent: 0, retrans: 0, rtt: 0, minRtt: 0 };
+
+function noteTcp(res) {
+  const raw = res.headers.get('server-timing');
+  if (!raw) return;
+
+  const m = /cfL4;desc="\?([^"]+)"/.exec(raw);
+  if (!m) return;
+
+  const f = Object.fromEntries(m[1].split('&').map(p => p.split('=')));
+  const sent = +f.sent || 0;
+
+  // Several connections may be in play; keep the busiest, since it
+  // carried the transfer and so has the meaningful counters.
+  if (sent > tcp.sent) {
+    tcp.sent    = sent;
+    tcp.retrans = +f.retrans || 0;
+    tcp.rtt     = (+f.rtt || 0) / 1000;        // µs → ms
+    tcp.minRtt  = (+f.min_rtt || 0) / 1000;
+  }
+}
+
+function resetTcp() {
+  tcp.sent = tcp.retrans = tcp.rtt = tcp.minRtt = 0;
+}
+
+/** Loss as a percentage of segments sent, or null if too little moved. */
+function lossPercent() {
+  if (tcp.sent < 200) return null;
+  return (tcp.retrans / tcp.sent) * 100;
+}
+
+/**
+ * Harvest the counters after a transfer. The stats ride on response
+ * headers, so they describe the connection as it stood *before* that
+ * response's own body — totals for a transfer only surface on a later
+ * request. Chromium may also spread work across more than one
+ * connection, so ask a few times and keep the busiest.
+ */
+async function sampleTcp(signal) {
+  for (let i = 0; i < 3; i++) {
+    try {
+      const res = await fetch(`${CF}/__down?bytes=0&r=${Math.random()}`,
+                              { cache: 'no-store', signal });
+      noteTcp(res);
+      await res.arrayBuffer();
+    } catch {
+      return;
+    }
+  }
+}
+
+/* ===========================================================
    Latency
    =========================================================== */
+
+/**
+ * Ping continuously while something else saturates the line. The gap
+ * between this and the idle ping is bufferbloat: the delay your calls
+ * and games suffer whenever the connection is busy.
+ */
+function pingUnderLoad(signal) {
+  const rtts = [];
+
+  (async () => {
+    while (!signal.aborted) {
+      const t0 = now();
+      try {
+        const res = await fetch(`${CF}/__down?bytes=0&r=${Math.random()}`,
+                                { cache: 'no-store', signal });
+        noteTcp(res);
+        await res.arrayBuffer();
+        rtts.push(now() - t0);
+      } catch {
+        return;                       // aborted, or the line gave up
+      }
+      await sleep(250);
+    }
+  })();
+
+  return rtts;
+}
 
 async function measureLatency(onSample) {
   const c = CFG.ping;
@@ -229,6 +336,7 @@ async function streamDown(bytes, signal, onChunk) {
     { cache: 'no-store', signal }
   );
   if (!res.ok) throw new Error('Download failed: HTTP ' + res.status);
+  noteTcp(res);
 
   const reader = res.body.getReader();
   for (;;) {
@@ -300,6 +408,10 @@ async function measureDownload(onProgress) {
   const meas = new Sampler();
   meas.start();
 
+  // Ping alongside the transfer: the line is saturated now, which is
+  // exactly when latency matters and exactly when nobody measures it.
+  const loaded = pingUnderLoad(ctl.signal);
+
   const workers = pool(streams, async () => {
     while (!ctl.signal.aborted) {
       await streamDown(chunk, ctl.signal, n => meas.add(n));
@@ -328,11 +440,22 @@ async function measureDownload(onProgress) {
   await workers.done;
   if (workers.error && !meas.rates.length) throw workers.error;
 
+  // Now that the streams are done, read what the server's stack recorded.
+  await sampleTcp();
+
   const bps = meas.rates.length
     ? median(meas.rates)
     : meas.bytes / ((now() - meas.startedAt) / 1000);
 
-  return { mbps: toMbps(bps), bytes: spent() };
+  return {
+    mbps:   toMbps(bps),
+    bytes:  spent(),
+    lo:     toMbps(percentile(meas.rates, 0.1)),
+    hi:     toMbps(percentile(meas.rates, 0.9)),
+    spread: dispersion(meas.rates),
+    samples: meas.rates.length,
+    loaded: median(loaded)
+  };
 }
 
 /* ===========================================================
@@ -475,6 +598,7 @@ async function streamedUpload(streams, perStream, spent, onProgress) {
   meas.start();
 
   const size = Math.round(clamp(perStream * 4, 1 << 20, 64 << 20));
+  const loaded = pingUnderLoad(ctl.signal);
 
   const workers = pool(streams, async () => {
     while (!ctl.signal.aborted) {
@@ -503,7 +627,15 @@ async function streamedUpload(streams, perStream, spent, onProgress) {
   const bps = meas.rates.length
     ? median(meas.rates)
     : meas.bytes / ((now() - meas.startedAt) / 1000);
-  return { mbps: toMbps(bps), bytes: spent };
+
+  return {
+    mbps:   toMbps(bps),
+    bytes:  spent,
+    lo:     toMbps(percentile(meas.rates, 0.1)),
+    hi:     toMbps(percentile(meas.rates, 0.9)),
+    spread: dispersion(meas.rates),
+    loaded: median(loaded)
+  };
 }
 
 /** Fallback: time whole POSTs, kept short so the in-flight tail is small. */
@@ -521,12 +653,21 @@ async function blindUpload(streams, perStream, spent, onProgress) {
   const t0 = now();
   let done = 0, hits = 0, lastEnd = t0;
 
+  const loaded = pingUnderLoad(ctl.signal);
+
+  // Bytes are only credited when a POST finishes, so the rate is read
+  // over a long window — otherwise the range would describe the size of
+  // the chunks rather than the steadiness of the line.
+  const meas = new Sampler();
+  meas.start();
+
   const workers = pool(streams, async () => {
     while (!ctl.signal.aborted) {
       const blob = payload(chunk);
       await postBlob(blob, ctl.signal);
       done += blob.size;
       spent += blob.size;
+      meas.add(blob.size);
       hits++;
       lastEnd = now();
       onProgress(toMbps(done / ((lastEnd - t0) / 1000)), spent);
@@ -536,6 +677,9 @@ async function blindUpload(streams, perStream, spent, onProgress) {
   while (!ctl.signal.aborted) {
     await sleep(c.sampleMs);
     const elapsed = now() - t0;
+    const rate = meas.tick(1200);
+    if (elapsed > c.warmupMs && rate > 0) meas.rates.push(rate);
+
     // Every stream must land several posts, or the bytes still in
     // flight would be a large share of what we are measuring.
     if (workers.error ||
@@ -548,7 +692,14 @@ async function blindUpload(streams, perStream, spent, onProgress) {
   if (workers.error && !hits) throw workers.error;
 
   const secs = Math.max((lastEnd - t0) / 1000, 0.001);
-  return { mbps: toMbps(done / secs), bytes: spent };
+  return {
+    mbps:   toMbps(done / secs),
+    bytes:  spent,
+    lo:     toMbps(percentile(meas.rates, 0.1)),
+    hi:     toMbps(percentile(meas.rates, 0.9)),
+    spread: dispersion(meas.rates),
+    loaded: median(loaded)
+  };
 }
 
 /* ===========================================================
@@ -622,6 +773,39 @@ function grade(down, up, ping) {
   if (down < 500)
     return ['Very fast', 'Effectively unlimited for everyday use. Big downloads land in minutes.'];
   return ['Blazing', 'Gigabit-class. Nothing you do day to day will be the bottleneck.'];
+}
+
+/**
+ * How much the line wandered while being measured. A single number is
+ * only worth as much as its steadiness, so say so plainly.
+ */
+function steadiness(spread) {
+  if (spread <= 0.08) return ['steady',   'yes',  'held its speed throughout'];
+  if (spread <= 0.20) return ['variable', 'wait', 'wandered a little while measuring'];
+  if (spread <= 0.45) return ['unsteady', 'wait', 'moved around a lot — treat as rough'];
+  return ['erratic', 'no', 'swung wildly — something is congested'];
+}
+
+/**
+ * Bufferbloat: how far latency climbs once the line is busy. This is why
+ * a fast connection can still feel broken on calls — the speed is fine,
+ * but every packet queues behind a download.
+ */
+function bloatGrade(rise) {
+  if (rise == null || !isFinite(rise)) return null;
+  if (rise < 30)  return ['A', 'yes',  'stays responsive even when busy'];
+  if (rise < 60)  return ['B', 'yes',  'barely suffers under load'];
+  if (rise < 125) return ['C', 'wait', 'calls and games will wobble during downloads'];
+  if (rise < 250) return ['D', 'no',   'anything live breaks up while the line is busy'];
+  return ['F', 'no', 'unusable for calls or gaming whenever anything downloads'];
+}
+
+function lossVerdict(pct) {
+  if (pct == null) return null;
+  if (pct < 0.1) return ['none worth noting', 'yes'];
+  if (pct < 1)   return [pct.toFixed(2) + '% of packets resent', 'wait'];
+  if (pct < 2.5) return [pct.toFixed(1) + '% lost — calls will glitch', 'no'];
+  return [pct.toFixed(1) + '% lost — badly degraded', 'no'];
 }
 
 /* `up` is null while the upload phase is still running. Anything that
@@ -704,6 +888,53 @@ function renderResults(down, up, ping, jitter) {
   for (const id of ['verdict', 'canDo', 'timings', 'household']) $(id).hidden = false;
 }
 
+/** The "when the line is busy" card: bufferbloat, loss, steadiness. */
+function renderQuality(idlePing, dl, ul) {
+  const rows = [];
+
+  const worstLoaded = Math.max(dl.loaded || 0, ul.loaded || 0);
+  const rise = worstLoaded > 0 ? worstLoaded - idlePing : null;
+  const bloat = bloatGrade(rise);
+
+  if (bloat) {
+    const [letter, tone, blurb] = bloat;
+    rows.push([letter, 'Delay when busy', tone,
+      `ping goes ${Math.round(idlePing)} ms → ${Math.round(worstLoaded)} ms — ${blurb}`]);
+  }
+
+  const loss = lossVerdict(lossPercent());
+  if (loss) {
+    const [text, tone] = loss;
+    rows.push(['⇄', 'Packet loss', tone,
+      `${text} — the server resent ${tcp.retrans.toLocaleString()} of the ` +
+      `${tcp.sent.toLocaleString()} packets it sent you`]);
+  }
+
+  const [word, tone, blurb] = steadiness(Math.max(dl.spread || 0, ul.spread || 0));
+  rows.push(['~', 'Steadiness', tone, `${word} — ${blurb}`]);
+
+  const el = $('qual');
+  el.innerHTML = '';
+  for (const [icon, label, tone, detail] of rows) {
+    const li = document.createElement('li');
+    li.innerHTML = `
+      <span class="mark ${tone} grade-mark">${icon}</span>
+      <span class="body">
+        <span class="name">${label}</span>
+        <span class="note">${detail}</span>
+      </span>`;
+    el.appendChild(li);
+  }
+  $('quality').hidden = false;
+}
+
+/** "58 Mbps, but it ranged 41–72" — shown under the tile figure. */
+function showRange(id, r) {
+  const el = $(id);
+  if (!r || !(r.hi > 0) || r.spread < 0.08) { el.textContent = ''; return; }
+  el.textContent = `ranged ${fmtSpeed(r.lo)}–${fmtSpeed(r.hi)}`;
+}
+
 /* ===========================================================
    UI wiring
    =========================================================== */
@@ -751,11 +982,13 @@ async function run() {
 
   // The heading and the tiles are permanent fixtures; only the sections
   // below them come and go, so the layout above never jumps.
-  for (const id of ['verdict', 'canDo', 'timings', 'household']) $(id).hidden = true;
+  for (const id of ['verdict', 'quality', 'canDo', 'timings', 'household']) $(id).hidden = true;
   for (const id of ['rDown', 'rUp', 'rPing', 'rJitter']) $(id).textContent = '—';
+  for (const id of ['rDownRange', 'rUpRange']) $(id).textContent = '';
   $('meta').textContent = '';
   $('usage').textContent = '';
   used(0);   // clear last run's figure; it fills in again once bytes move
+  resetTcp();
 
   const started = now();
   let totalBytes = 0;
@@ -793,9 +1026,12 @@ async function run() {
       used(totalBytes);
     });
     $('rUp').textContent = fmtSpeed(ul.mbps);
+    showRange('rDownRange', dl);
+    showRange('rUpRange', ul);
 
     show(dl.mbps, 'down');
     renderResults(dl.mbps, ul.mbps, lat.ping, lat.jitter);
+    renderQuality(lat.ping, dl, ul);
     done = true;
 
     const w = await where;

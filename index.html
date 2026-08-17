@@ -57,6 +57,7 @@
         </button>
       </span>
       <span class="t-value"><b id="rDown">—</b> <i>Mbps</i></span>
+      <span class="t-range" id="rDownRange"></span>
     </div>
     <div class="tile">
       <span class="t-label">Upload
@@ -67,6 +68,7 @@
         </button>
       </span>
       <span class="t-value"><b id="rUp">—</b> <i>Mbps</i></span>
+      <span class="t-range" id="rUpRange"></span>
     </div>
     <div class="tile">
       <span class="t-label">Ping
@@ -98,6 +100,24 @@
   <section class="verdict" id="verdict" hidden>
     <h2 id="grade"></h2>
     <p id="gradeNote"></p>
+  </section>
+
+  <!-- ── Behaviour under load ──────────────────────────── -->
+  <section class="card" id="quality" hidden>
+    <h3>When the line is busy
+      <button type="button" class="info" data-note="quality"
+              aria-expanded="false" aria-controls="note-quality">
+        <span aria-hidden="true">i</span>
+        <span class="sr">What is this measuring?</span>
+      </button>
+    </h3>
+    <p class="card-note" id="note-quality" hidden>
+      Speed is measured on an idle line, but you rarely use an idle line.
+      These are taken <em>while</em> the test is saturating your connection,
+      which is when calls stutter and games lag. A fast connection can still
+      fail here — and that failure is what people actually notice.
+    </p>
+    <ul class="sim" id="qual"></ul>
   </section>
 
   <!-- ── What you can do ───────────────────────────────── -->
