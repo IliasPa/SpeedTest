@@ -169,13 +169,56 @@
     <ul class="sim" id="sim"></ul>
   </section>
 
+  <!-- ── History ───────────────────────────────────────── -->
+  <section class="card" id="history" hidden>
+    <h3>Your past runs
+      <button type="button" class="info" data-note="history"
+              aria-expanded="false" aria-controls="note-history">
+        <span aria-hidden="true">i</span>
+        <span class="sr">Where is this stored?</span>
+      </button>
+    </h3>
+    <p class="card-note" id="note-history" hidden>
+      Kept on this device only, in your browser's own storage. Nothing is
+      uploaded, there is no account, and clearing it below erases it for
+      good. One reading tells you very little; a dozen tell you what your
+      line actually does.
+    </p>
+    <p class="hist-note" id="histNote"></p>
+    <ul class="hist" id="hist"></ul>
+    <button type="button" class="linkish" id="clearHist">Clear history</button>
+  </section>
+
+  <!-- ── Honest limits ─────────────────────────────────── -->
+  <details class="card limits">
+    <summary>What this test can and cannot tell you</summary>
+
+    <p><b>It measures the path to the nearest Cloudflare data centre</b>, not
+      your provider's contracted speed. That is the right question for "will
+      Netflix work" and the wrong one for "am I getting what I pay for". For a
+      billing dispute, use your provider's own test.</p>
+
+    <p><b>A browser tab cannot saturate a very fast line.</b> Above roughly
+      500 Mbps expect this to read low — a native app with more threads will
+      beat it. Below that it is accurate.</p>
+
+    <p><b>Wi-Fi is usually the bottleneck, not the line.</b> If the result
+      disappoints, test again over a cable before blaming your provider.</p>
+
+    <p><b>Anything else using the connection counts against you</b> — a phone
+      backing up, someone streaming in the next room, an update downloading.</p>
+
+    <p><b>One run is a snapshot, not a verdict.</b> Connections vary by the
+      hour, which is exactly why past runs are kept above.</p>
+  </details>
+
   <!-- ── Footer ────────────────────────────────────────── -->
   <footer class="foot">
     <p id="meta" class="meta"></p>
     <p id="usage" class="usage"></p>
     <p class="about">
       Test data is served by <a href="https://speed.cloudflare.com" rel="noopener">Cloudflare's public speed endpoints</a>;
-      this page is static and stores nothing.
+      results are stored only in this browser.
       <a href="https://github.com/IliasPa/SpeedTest" rel="noopener">Source</a>.
     </p>
   </footer>

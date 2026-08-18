@@ -26,8 +26,10 @@ This one:
    The upload probe is sized from the download result, since a POST can't be cut short.
 3. **Throws away the ramp-up.** TCP slow start makes the first ~700 ms meaningless, so
    throughput is sampled over a sliding window after it.
-4. **Aborts the moment it settles.** Once ten consecutive samples agree within 5 %, the
-   transfer is cancelled mid-flight. Nothing more is pulled.
+4. **Aborts the moment the answer settles.** Not when the samples look smooth — when
+   taking more of them stops moving the running median. A jittery line never produces
+   smooth samples, so the old test always ran to its ceiling; this one stops as soon as
+   more data would tell it nothing new.
 
 Measured: a 3 Mbps line finishes in about **3 MB**. A gigabit line spends about **190 MB**,
 because there is no way around it — measuring a gigabit means actually moving a gigabit.
@@ -98,6 +100,17 @@ So the page is hosted on GitHub, but the bytes come from Cloudflare's public spe
 endpoints (`speed.cloudflare.com/__down` and `/__up`) — the same ones behind
 `speed.cloudflare.com`. They're CORS-open, globally distributed, and free. Nothing is
 stored and no account is needed.
+
+## Your past runs
+
+Every completed test is kept in this browser's own storage — never uploaded, no account,
+no cookie. They are shown newest-first with a bar each, and every new result is placed
+against the earlier ones: *"46% faster than usual — your median across 3 earlier runs is
+277 Mbps."*
+
+This matters more than it sounds. The line this was built against measured 46 Mbps one
+day and 1212 Mbps the next. Any single reading from any speed test is a snapshot; a dozen
+of them is evidence. Clearing them is one click, and irreversible.
 
 ## Accuracy, honestly
 

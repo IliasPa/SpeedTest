@@ -9,6 +9,39 @@ The live site always serves whatever is newest on `main`:
 
 ---
 
+## v0.4 — Trustworthiness
+
+v0.3 added metrics nobody else surfaces, but they sat on top of a number that swung
+25× between runs. This version is about making the number worth believing.
+
+**A stability detector that actually settles.** The old one asked whether the last ten
+throughput samples agreed with each other — which on a jittery line is never true, so
+every run continued to the 7 s ceiling. It now watches whether *the running median is
+still moving*. Once more samples stop changing the answer, there is nothing left to
+learn, however much the line bounces underneath. Measured over four runs each on the
+same connection: **6.4 s average, down from 7.7 s** — and far steadier, 6.1–6.6 s
+against 5.9–9.7 s.
+
+**Packet loss now aggregates every connection.** The counters are per-connection, and
+the header names which one it came from. Chromium turned out to be using **eight
+connections at once**, so reading whichever one answered last was close to a coin
+toss. Keeping a high-water mark per connection and summing them took the row from
+appearing in 3 runs out of 4 to 8 out of 9.
+
+**Past runs are remembered.** Every completed test is kept in this browser's own
+storage — never uploaded, no account — and shown newest-first with a bar each, so the
+spread is visible at a glance. Each new result is placed against the earlier ones:
+*"46% faster than usual — your median across 3 earlier runs is 277 Mbps."* One reading
+was never enough to judge a connection by; this is the fix. Clearing it is one click
+and irreversible.
+
+**An honest account of the limits**, on the page rather than buried in this file: that
+it measures to the nearest Cloudflare edge rather than your provider's contracted rate,
+that a browser tab reads low above roughly 500 Mbps, that Wi-Fi is usually the real
+bottleneck, and that one run is a snapshot rather than a verdict. Collapsed by default.
+
+---
+
 ## v0.3 — How far to trust it, and how it behaves under load
 
 Three additions, all aimed at the same thing: one speed figure is not enough to

@@ -29,7 +29,8 @@ const CFG = {
     maxBytes:   120 << 20,    // hard ceiling on data spent
     fastMbps:   200,          // above this, shorten the window — see below
     chunkMs:    1500,         // aim each request at ~1.5 s of transfer
-    stableCov:  0.05,         // stop when 10 samples vary < 5 %
+    settleTol:  0.035,        // stop when the running median moves < 3.5 %
+    settleFor:  6,            //   for this many consecutive ticks
     sampleMs:   100,
     windowMs:   700
   },
@@ -43,7 +44,8 @@ const CFG = {
     maxMs:      7000,
     maxBytes:   60 << 20,
     chunkMs:    500,          // short posts: the blind tail stays small
-    stableCov:  0.06,
+    settleTol:  0.045,
+    settleFor:  6,
     sampleMs:   100,
     windowMs:   800
   }
@@ -97,13 +99,36 @@ function dispersion(a) {
   return mid > 0 ? (percentile(a, 0.75) - percentile(a, 0.25)) / mid : 0;
 }
 
-/** Coefficient of variation — how much a set of samples disagrees. */
-function cov(a) {
-  if (a.length < 2) return Infinity;
-  const mean = a.reduce((x, y) => x + y, 0) / a.length;
-  if (mean <= 0) return Infinity;
-  const varc = a.reduce((s, v) => s + (v - mean) ** 2, 0) / a.length;
-  return Math.sqrt(varc) / mean;
+/**
+ * Watches the running answer instead of the raw samples.
+ *
+ * The old test asked whether the last ten samples agreed with each
+ * other, which on a jittery line is never true — so it measured until
+ * the ceiling every single time. What actually matters is whether taking
+ * more samples still moves the median. Once the answer stops changing,
+ * more data buys nothing, however much the line bounces underneath.
+ */
+class Convergence {
+  constructor(tol, need) {
+    this.tol  = tol;    // fractional move that still counts as settled
+    this.need = need;   // consecutive settled ticks required
+    this.last = 0;
+    this.runs = 0;
+  }
+
+  /** Feed the current best estimate; true once it has stopped moving. */
+  push(estimate) {
+    if (!(estimate > 0)) return false;
+
+    if (this.last > 0 && Math.abs(estimate - this.last) / this.last < this.tol) {
+      this.runs++;
+    } else {
+      this.runs = 0;
+    }
+
+    this.last = estimate;
+    return this.runs >= this.need;
+  }
 }
 
 function fmtSpeed(mbps) {
@@ -200,7 +225,12 @@ class Sampler {
    on packet loss, for no extra bytes at all.
    =========================================================== */
 
-const tcp = { sent: 0, retrans: 0, rtt: 0, minRtt: 0 };
+/* Chromium may spread a transfer over several connections, and each one
+   counts only its own packets. The header names the connection it came
+   from, so keep the high-water mark per connection and add them up —
+   otherwise whichever connection we happened to ask last decides the
+   answer, and a fresh one reports almost nothing. */
+const tcpConns = new Map();     // cid -> { sent, retrans, minRtt }
 
 function noteTcp(res) {
   const raw = res.headers.get('server-timing');
@@ -210,26 +240,38 @@ function noteTcp(res) {
   if (!m) return;
 
   const f = Object.fromEntries(m[1].split('&').map(p => p.split('=')));
+  const cid  = f.cid || 'unknown';
   const sent = +f.sent || 0;
 
-  // Several connections may be in play; keep the busiest, since it
-  // carried the transfer and so has the meaningful counters.
-  if (sent > tcp.sent) {
-    tcp.sent    = sent;
-    tcp.retrans = +f.retrans || 0;
-    tcp.rtt     = (+f.rtt || 0) / 1000;        // µs → ms
-    tcp.minRtt  = (+f.min_rtt || 0) / 1000;
+  // Counters only ever grow on a given connection, so the largest
+  // reading is the most complete one.
+  const prev = tcpConns.get(cid);
+  if (!prev || sent > prev.sent) {
+    tcpConns.set(cid, {
+      sent,
+      retrans: +f.retrans || 0,
+      minRtt:  (+f.min_rtt || 0) / 1000     // µs → ms
+    });
   }
 }
 
-function resetTcp() {
-  tcp.sent = tcp.retrans = tcp.rtt = tcp.minRtt = 0;
+function tcpTotals() {
+  let sent = 0, retrans = 0, minRtt = Infinity;
+  for (const c of tcpConns.values()) {
+    sent    += c.sent;
+    retrans += c.retrans;
+    if (c.minRtt > 0) minRtt = Math.min(minRtt, c.minRtt);
+  }
+  return { sent, retrans, minRtt: isFinite(minRtt) ? minRtt : 0, conns: tcpConns.size };
 }
 
-/** Loss as a percentage of segments sent, or null if too little moved. */
+function resetTcp() { tcpConns.clear(); }
+
+/** Loss as a percentage of packets sent, or null if too little moved. */
 function lossPercent() {
-  if (tcp.sent < 200) return null;
-  return (tcp.retrans / tcp.sent) * 100;
+  const t = tcpTotals();
+  if (t.sent < 200) return null;
+  return (t.retrans / t.sent) * 100;
 }
 
 /**
@@ -419,6 +461,7 @@ async function measureDownload(onProgress) {
   });
 
   const spent = () => sampler.bytes + meas.bytes;
+  const settle = new Convergence(c.settleTol, c.settleFor);
   const t0 = now();
 
   while (!ctl.signal.aborted) {
@@ -428,10 +471,12 @@ async function measureDownload(onProgress) {
 
     onProgress(toMbps(rate), spent());
 
-    if (elapsed > warmupMs && rate > 0) meas.rates.push(rate);
-
-    const enough  = elapsed >= minMs && meas.rates.length >= minRates;
-    const settled = enough && cov(meas.rates.slice(-minRates)) < c.stableCov;
+    let settled = false;
+    if (elapsed > warmupMs && rate > 0) {
+      meas.rates.push(rate);
+      settled = settle.push(median(meas.rates)) &&
+                elapsed >= minMs && meas.rates.length >= minRates;
+    }
 
     if (workers.error || settled || elapsed >= c.maxMs || spent() >= c.maxBytes) break;
   }
@@ -606,17 +651,23 @@ async function streamedUpload(streams, perStream, spent, onProgress) {
     }
   });
 
+  const settle = new Convergence(c.settleTol, c.settleFor);
   const t0 = now();
+
   while (!ctl.signal.aborted) {
     await sleep(c.sampleMs);
     const elapsed = now() - t0;
     const rate = meas.tick(c.windowMs);
 
     onProgress(toMbps(rate), spent);
-    if (elapsed > c.warmupMs && rate > 0) meas.rates.push(rate);
 
-    const enough  = elapsed >= c.minMs && meas.rates.length >= 10;
-    const settled = enough && cov(meas.rates.slice(-10)) < c.stableCov;
+    let settled = false;
+    if (elapsed > c.warmupMs && rate > 0) {
+      meas.rates.push(rate);
+      settled = settle.push(median(meas.rates)) &&
+                elapsed >= c.minMs && meas.rates.length >= 10;
+    }
+
     if (workers.error || settled || elapsed >= c.maxMs || spent >= c.maxBytes) break;
   }
 
@@ -700,6 +751,50 @@ async function blindUpload(streams, perStream, spent, onProgress) {
     spread: dispersion(meas.rates),
     loaded: median(loaded)
   };
+}
+
+/* ===========================================================
+   History
+
+   A single reading means very little — the same line here measured
+   46 Mbps and 1212 Mbps a day apart. Kept on this device only, in
+   localStorage: nothing is uploaded and there is no account.
+   =========================================================== */
+
+const HISTORY_KEY = 'speedtest.history.v1';
+const HISTORY_MAX = 20;
+
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list.filter(r => r && typeof r.down === 'number') : [];
+  } catch {
+    return [];                       // private mode, or storage disabled
+  }
+}
+
+function saveRun(entry) {
+  try {
+    const list = loadHistory();
+    list.push(entry);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(-HISTORY_MAX)));
+  } catch {
+    /* not being able to remember is not a reason to fail the test */
+  }
+}
+
+function clearHistory() {
+  try { localStorage.removeItem(HISTORY_KEY); } catch {}
+}
+
+function fmtAgo(ts) {
+  const s = (Date.now() - ts) / 1000;
+  if (s < 90)    return 'just now';
+  if (s < 3600)  return Math.round(s / 60) + ' min ago';
+  if (s < 86400) return Math.round(s / 3600) + ' hr ago';
+  const d = Math.round(s / 86400);
+  return d === 1 ? 'yesterday' : d + ' days ago';
 }
 
 /* ===========================================================
@@ -905,9 +1000,10 @@ function renderQuality(idlePing, dl, ul) {
   const loss = lossVerdict(lossPercent());
   if (loss) {
     const [text, tone] = loss;
+    const t = tcpTotals();
     rows.push(['⇄', 'Packet loss', tone,
-      `${text} — the server resent ${tcp.retrans.toLocaleString()} of the ` +
-      `${tcp.sent.toLocaleString()} packets it sent you`]);
+      `${text} — the server resent ${t.retrans.toLocaleString()} of the ` +
+      `${t.sent.toLocaleString()} packets it sent you`]);
   }
 
   const [word, tone, blurb] = steadiness(Math.max(dl.spread || 0, ul.spread || 0));
@@ -926,6 +1022,62 @@ function renderQuality(idlePing, dl, ul) {
     el.appendChild(li);
   }
   $('quality').hidden = false;
+}
+
+/**
+ * Past runs on this device, newest first, each with a bar so the spread
+ * is obvious at a glance. Also says where the run just finished sits
+ * against the usual, which is the whole point of keeping them.
+ */
+function renderHistory(justRan) {
+  const list = loadHistory();
+  const card = $('history');
+
+  if (!list.length) { card.hidden = true; return; }
+
+  const recent = list.slice(-8).reverse();
+  const peak = Math.max(...recent.map(r => r.down));
+
+  const el = $('hist');
+  el.innerHTML = '';
+  for (const [i, r] of recent.entries()) {
+    // Only the newest row is "this run", and only right after one ran.
+    const tag = justRan && i === 0 ? ' <em class="tag">this run</em>' : '';
+    const li = document.createElement('li');
+    li.innerHTML = `
+      <span class="body">
+        <span class="name">${fmtSpeed(r.down)} <i>Mbps</i>${tag}</span>
+        <span class="hist-bar"><span style="width:${(r.down / peak) * 100}%"></span></span>
+      </span>
+      <span class="amount dim">${fmtAgo(r.t)}</span>`;
+    el.appendChild(li);
+  }
+
+  const note = $('histNote');
+  note.textContent = '';
+
+  if (justRan && list.length >= 2) {
+    // Compare the run that just finished against everything before it.
+    const past = list.slice(0, -1).map(r => r.down);
+    const usual = median(past);
+    const current = list[list.length - 1].down;
+    const n = past.length;
+    const runs = n === 1 ? 'run' : 'runs';
+
+    if (usual > 0) {
+      const diff = ((current - usual) / usual) * 100;
+      note.textContent = Math.abs(diff) < 12
+        ? `Typical for this connection — your median across ${n} earlier ${runs} is ${fmtSpeed(usual)} Mbps.`
+        : `${Math.abs(Math.round(diff))}% ${diff > 0 ? 'faster' : 'slower'} than usual — ` +
+          `your median across ${n} earlier ${runs} is ${fmtSpeed(usual)} Mbps.`;
+    }
+  } else if (list.length >= 2) {
+    const all = list.map(r => r.down);
+    note.textContent = `Median of your last ${list.length} runs: ${fmtSpeed(median(all))} Mbps, ` +
+      `ranging ${fmtSpeed(Math.min(...all))}–${fmtSpeed(Math.max(...all))}.`;
+  }
+
+  card.hidden = false;
 }
 
 /** "58 Mbps, but it ranged 41–72" — shown under the tile figure. */
@@ -1032,6 +1184,17 @@ async function run() {
     show(dl.mbps, 'down');
     renderResults(dl.mbps, ul.mbps, lat.ping, lat.jitter);
     renderQuality(lat.ping, dl, ul);
+
+    saveRun({
+      t: Date.now(),
+      down: dl.mbps,
+      up: ul.mbps,
+      ping: Math.round(lat.ping),
+      loaded: Math.round(Math.max(dl.loaded || 0, ul.loaded || 0)) || null,
+      loss: lossPercent()
+    });
+    renderHistory(true);
+
     done = true;
 
     const w = await where;
@@ -1111,6 +1274,14 @@ for (const btn of explainBtns) {
     openKey = key;
   });
 }
+
+$('clearHist').addEventListener('click', () => {
+  clearHistory();
+  $('history').hidden = true;
+});
+
+/* Show past runs on arrival, before anything is measured. */
+renderHistory(false);
 
 /* Each card explains itself, in place. */
 for (const btn of document.querySelectorAll('[data-note]')) {
