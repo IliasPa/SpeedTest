@@ -7,16 +7,24 @@
 <title>Speed Test — how fast is your internet, really?</title>
 <meta name="description" content="A fast, frugal internet speed test. Measures download, upload, ping and jitter, stops as soon as the result is stable, and tells you what your connection can actually do.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0d1017">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
 <main class="wrap">
 
+  <a class="skip" href="#go" data-i18n="skip">Skip to the test</a>
+
   <header class="head">
-    <h1><span class="bolt">⚡</span> Speed Test</h1>
-    <p class="sub">Measures only as much as it needs, then stops.</p>
+    <h1><span class="bolt">⚡</span> <span data-i18n="head.title">Speed Test</span></h1>
+    <p class="sub" data-i18n="head.sub">Measures only as much as it needs, then stops.</p>
+    <button type="button" class="lang" id="langBtn"></button>
   </header>
+
+  <p class="banner" id="sharedBanner" hidden></p>
 
   <!-- ── Gauge ─────────────────────────────────────────── -->
   <section class="gauge-box">
@@ -30,62 +38,69 @@
       </g>
     </svg>
 
-    <div class="readout">
+    <div class="readout" aria-hidden="true">
       <div class="value" id="value">—</div>
       <div class="unit" id="unit">Mbps</div>
     </div>
+
+    <p class="sr" id="liveStatus" role="status" aria-live="polite"></p>
   </section>
 
   <!-- The button doubles as the status line: it carries every phase
        message, so the gauge holds nothing but the reading. The second
        line reports data spent, and stays put once the test is done. -->
-  <button id="go" class="go">
+  <button id="go" class="go" aria-describedby="liveStatus">
     <span class="go-main" id="goMain">Ready when you are</span>
     <span class="go-sub" id="goSub"></span>
   </button>
 
-  <!-- ── Results ───────────────────────────────────────── -->
-  <div class="tiles-head">Your connection</div>
+  <label class="quick" id="quickWrap" hidden>
+    <input type="checkbox" id="quick">
+    <span data-i18n="quick.label">Quick test — about a fifth of the data, slightly rougher</span>
+  </label>
 
-  <section class="tiles">
+  <!-- ── Results ───────────────────────────────────────── -->
+  <div class="tiles-head" data-i18n="tiles.head">Your connection</div>
+
+  <section class="tiles" aria-label="Measured results">
     <div class="tile">
-      <span class="t-label">Download
+      <span class="t-label"><span data-i18n="tile.down">Download</span>
         <button type="button" class="info" data-explain="down"
                 aria-expanded="false" aria-controls="explain">
           <span aria-hidden="true">i</span>
-          <span class="sr">What is download speed?</span>
+          <span class="sr" data-i18n="ask.down">What is download speed?</span>
         </button>
       </span>
       <span class="t-value"><b id="rDown">—</b> <i>Mbps</i></span>
       <span class="t-range" id="rDownRange"></span>
     </div>
     <div class="tile">
-      <span class="t-label">Upload
+      <span class="t-label"><span data-i18n="tile.up">Upload</span>
         <button type="button" class="info" data-explain="up"
                 aria-expanded="false" aria-controls="explain">
           <span aria-hidden="true">i</span>
-          <span class="sr">What is upload speed?</span>
+          <span class="sr" data-i18n="ask.up">What is upload speed?</span>
         </button>
       </span>
       <span class="t-value"><b id="rUp">—</b> <i>Mbps</i></span>
       <span class="t-range" id="rUpRange"></span>
     </div>
     <div class="tile">
-      <span class="t-label">Ping
+      <span class="t-label"><span data-i18n="tile.ping">Ping</span>
         <button type="button" class="info" data-explain="ping"
                 aria-expanded="false" aria-controls="explain">
           <span aria-hidden="true">i</span>
-          <span class="sr">What is ping?</span>
+          <span class="sr" data-i18n="ask.ping">What is ping?</span>
         </button>
       </span>
       <span class="t-value"><b id="rPing">—</b> <i>ms</i></span>
     </div>
     <div class="tile">
-      <span class="t-label">Jitter
+      <span class="t-label"><span data-i18n="tile.jitter">Jitter</span>
         <button type="button" class="info" data-explain="jitter"
                 aria-expanded="false" aria-controls="explain">
           <span aria-hidden="true">i</span>
-          <span class="sr">What is jitter?</span>
+          <span class="sr" data-i18n="ask.jitter">What is jitter?</span>
         </button>
       </span>
       <span class="t-value"><b id="rJitter">—</b> <i>ms</i></span>
@@ -102,16 +117,22 @@
     <p id="gradeNote"></p>
   </section>
 
+  <div class="share" id="share" hidden>
+    <button type="button" class="chip" id="copyLink" data-i18n="share.copy">Copy link</button>
+    <button type="button" class="chip" id="saveCard" data-i18n="share.save">Save image</button>
+    <span class="share-msg" id="shareMsg" role="status" aria-live="polite"></span>
+  </div>
+
   <!-- ── Behaviour under load ──────────────────────────── -->
   <section class="card" id="quality" hidden>
-    <h3>When the line is busy
+    <h3><span data-i18n="qual.title">When the line is busy</span>
       <button type="button" class="info" data-note="quality"
               aria-expanded="false" aria-controls="note-quality">
         <span aria-hidden="true">i</span>
-        <span class="sr">What is this measuring?</span>
+        <span class="sr" data-i18n="qual.ask">What is this measuring?</span>
       </button>
     </h3>
-    <p class="card-note" id="note-quality" hidden>
+    <p class="card-note" id="note-quality" data-i18n-html="qual.note" hidden>
       Speed is measured on an idle line, but you rarely use an idle line.
       These are taken <em>while</em> the test is saturating your connection,
       which is when calls stutter and games lag. A fast connection can still
@@ -122,14 +143,14 @@
 
   <!-- ── What you can do ───────────────────────────────── -->
   <section class="card" id="canDo" hidden>
-    <h3>What you can do
+    <h3><span data-i18n="acts.title">What you can do</span>
       <button type="button" class="info" data-note="canDo"
               aria-expanded="false" aria-controls="note-canDo">
         <span aria-hidden="true">i</span>
-        <span class="sr">What does this list show?</span>
+        <span class="sr" data-i18n="acts.ask">What does this list show?</span>
       </button>
     </h3>
-    <p class="card-note" id="note-canDo" hidden>
+    <p class="card-note" id="note-canDo" data-i18n-html="acts.note" hidden>
       Each row checks your measured speed and ping against what that
       activity actually needs. A tick means your connection clears the bar
       with room to spare; a cross names the one thing that falls short.
@@ -138,14 +159,14 @@
   </section>
 
   <section class="card" id="timings" hidden>
-    <h3>How long things take
+    <h3><span data-i18n="times.title">How long things take</span>
       <button type="button" class="info" data-note="timings"
               aria-expanded="false" aria-controls="note-timings">
         <span aria-hidden="true">i</span>
-        <span class="sr">How are these times worked out?</span>
+        <span class="sr" data-i18n="times.ask">How are these times worked out?</span>
       </button>
     </h3>
-    <p class="card-note" id="note-timings" hidden>
+    <p class="card-note" id="note-timings" data-i18n-html="times.note" hidden>
       File size divided by the speed just measured. Treat these as a best
       case: the far end, your disk and your Wi-Fi each add limits of their
       own, so real transfers usually take a little longer.
@@ -154,14 +175,14 @@
   </section>
 
   <section class="card" id="household" hidden>
-    <h3>At the same time
+    <h3><span data-i18n="sim.title">At the same time</span>
       <button type="button" class="info" data-note="household"
               aria-expanded="false" aria-controls="note-household">
         <span aria-hidden="true">i</span>
-        <span class="sr">What does this mean?</span>
+        <span class="sr" data-i18n="sim.ask">What does this mean?</span>
       </button>
     </h3>
-    <p class="card-note" id="note-household" hidden>
+    <p class="card-note" id="note-household" data-i18n-html="sim.note" hidden>
       How many of each your line could carry at once, everyone sharing it
       together — one person on 4K in the living room while another is on a
       call upstairs.
@@ -171,14 +192,14 @@
 
   <!-- ── History ───────────────────────────────────────── -->
   <section class="card" id="history" hidden>
-    <h3>Your past runs
+    <h3><span data-i18n="hist.title">Your past runs</span>
       <button type="button" class="info" data-note="history"
               aria-expanded="false" aria-controls="note-history">
         <span aria-hidden="true">i</span>
-        <span class="sr">Where is this stored?</span>
+        <span class="sr" data-i18n="hist.ask">Where is this stored?</span>
       </button>
     </h3>
-    <p class="card-note" id="note-history" hidden>
+    <p class="card-note" id="note-history" data-i18n-html="hist.note" hidden>
       Kept on this device only, in your browser's own storage. Nothing is
       uploaded, there is no account, and clearing it below erases it for
       good. One reading tells you very little; a dozen tell you what your
@@ -186,45 +207,34 @@
     </p>
     <p class="hist-note" id="histNote"></p>
     <ul class="hist" id="hist"></ul>
-    <button type="button" class="linkish" id="clearHist">Clear history</button>
+    <button type="button" class="linkish" id="clearHist" data-i18n="hist.clear">Clear history</button>
   </section>
 
   <!-- ── Honest limits ─────────────────────────────────── -->
   <details class="card limits">
-    <summary>What this test can and cannot tell you</summary>
+    <summary data-i18n="limits.title">What this test can and cannot tell you</summary>
 
-    <p><b>It measures the path to the nearest Cloudflare data centre</b>, not
-      your provider's contracted speed. That is the right question for "will
-      Netflix work" and the wrong one for "am I getting what I pay for". For a
-      billing dispute, use your provider's own test.</p>
+    <p data-i18n-html="limits.1"></p>
 
-    <p><b>A browser tab cannot saturate a very fast line.</b> Above roughly
-      500 Mbps expect this to read low — a native app with more threads will
-      beat it. Below that it is accurate.</p>
+    <p data-i18n-html="limits.2"></p>
 
-    <p><b>Wi-Fi is usually the bottleneck, not the line.</b> If the result
-      disappoints, test again over a cable before blaming your provider.</p>
+    <p data-i18n-html="limits.3"></p>
 
-    <p><b>Anything else using the connection counts against you</b> — a phone
-      backing up, someone streaming in the next room, an update downloading.</p>
+    <p data-i18n-html="limits.4"></p>
 
-    <p><b>One run is a snapshot, not a verdict.</b> Connections vary by the
-      hour, which is exactly why past runs are kept above.</p>
+    <p data-i18n-html="limits.5"></p>
   </details>
 
   <!-- ── Footer ────────────────────────────────────────── -->
   <footer class="foot">
     <p id="meta" class="meta"></p>
     <p id="usage" class="usage"></p>
-    <p class="about">
-      Test data is served by <a href="https://speed.cloudflare.com" rel="noopener">Cloudflare's public speed endpoints</a>;
-      results are stored only in this browser.
-      <a href="https://github.com/IliasPa/SpeedTest" rel="noopener">Source</a>.
-    </p>
+    <p class="about" data-i18n-html="foot.about"></p>
   </footer>
 
 </main>
 
+<script src="i18n.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

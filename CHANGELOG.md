@@ -9,6 +9,49 @@ The live site always serves whatever is newest on `main`:
 
 ---
 
+## v0.5 — The rest of the roadmap
+
+**The headline verdict finally uses everything measured.** It read download and ping only,
+so a line whose latency tripled under load could still be told it was "Very fast" on the
+same page that reported the collapse. Now speed and behaviour are judged separately and
+combined: *"Very fast — until it gets busy"*, or *"Blazing on paper"* when packet loss is
+the problem, or *"Basic, but steady"* for a modest line that behaves. Seven synthetic
+cases checked, plus the live one. The activity list learned the same trick — video calls,
+gaming and cloud gaming now also require a line that stays calm under load, and live
+streaming requires low loss.
+
+**Greek and English**, switchable in the header, remembered per device and guessed from
+the browser on a first visit. 167 keys with full parity between the two, covering every
+string including the long explanations and the limits. Switching language re-renders a
+finished result in place rather than clearing it.
+
+**Shareable results.** The numbers travel inside the link's own fragment, so nothing is
+uploaded and no server keeps a record. A shared link opens in a labelled view that says
+plainly the figures are unverified and could have been edited — because they could. There
+is also a "Save image" button that draws the result as a card worth posting.
+
+**Installable and offline.** A manifest, three generated PNG icons and a service worker
+that caches the page shell but never the test traffic. If it is opened with no
+connection, it loads and says so, rather than showing a blank tab.
+
+**Quick mode for repeat visitors.** Anyone who has already run the full test is offered a
+cheaper repeat — about a fifth of the data, slightly rougher — as a per-run choice rather
+than a browser setting. Measured: 13.7 MB in 4.0 s against 60–95 MB in 7 s.
+
+**Accessibility.** A skip link, a focus ring that is never removed, the live reading
+announced to screen readers when it settles rather than on every tick, and the decorative
+gauge hidden from them.
+
+**Measured against fast.com** — three alternating runs, medians. fast.com reads about 30%
+higher; this test finishes in half the time on a fifth of the data. Both numbers and the
+reasons are in the README, including the unflattering half.
+
+*Found while building:* a greedy search-and-replace silently deleted `renderHistory`,
+which broke history, the screen-reader announcement and the share row at once. Restored
+from the v0.4.1 tag — the version folders would not have helped, but the tag did.
+
+---
+
 ## v0.4.1 — Off the main thread, and off the leash
 
 **The reading loop moved into Web Workers.** Every chunk of a download used to be a

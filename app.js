@@ -152,17 +152,17 @@ function fmtBytes(b) {
 
 function fmtDuration(sec) {
   if (!isFinite(sec) || sec <= 0) return '—';
-  if (sec < 1)     return 'under a second';
-  if (sec < 60)    return Math.round(sec) + ' sec';
-  if (sec < 3600)  {
-    const m = Math.floor(sec / 60), s = Math.round(sec % 60);
-    return s ? `${m} min ${s} sec` : `${m} min`;
+  if (sec < 1)  return t('dur.sub1');
+  if (sec < 60) return t('dur.sec', { n: Math.round(sec) });
+  if (sec < 3600) {
+    const m = Math.floor(sec / 60), r = Math.round(sec % 60);
+    return r ? t('dur.minSec', { m, s: r }) : t('dur.min', { n: m });
   }
   if (sec < 86400) {
     const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60);
-    return m ? `${h} hr ${m} min` : `${h} hr`;
+    return m ? t('dur.hrMin', { h, m }) : t('dur.hr', { n: h });
   }
-  return (sec / 86400).toFixed(1) + ' days';
+  return t('dur.days', { n: (sec / 86400).toFixed(1) });
 }
 
 /* Ignore aborts — they are how we stop on purpose. */
@@ -918,6 +918,145 @@ async function blindUpload(streams, perStream, spent, onProgress) {
   };
 }
 
+
+/* ===========================================================
+   Sharing
+
+   A link carries the numbers in its own fragment, so nothing is
+   uploaded and no server keeps a record. That also means a shared
+   result is only as honest as whoever sent it — anyone can edit the
+   link — so a shared view says so plainly rather than pretending to
+   be a measurement.
+   =========================================================== */
+
+let lastResult = null;
+
+function shareLink(r) {
+  const p = new URLSearchParams();
+  p.set('d', r.down.toFixed(2));
+  p.set('u', r.up.toFixed(2));
+  p.set('p', String(Math.round(r.ping)));
+  p.set('j', String(Math.round(r.jitter)));
+  if (r.loaded) p.set('l', String(Math.round(r.loaded)));
+  if (r.loss != null) p.set('x', r.loss.toFixed(2));
+  p.set('t', String(Math.round(r.t / 1000)));
+  return `${location.origin}${location.pathname}#${p}`;
+}
+
+function readShared() {
+  if (!location.hash || location.hash.length < 4) return null;
+  const p = new URLSearchParams(location.hash.slice(1));
+  const num = k => (p.has(k) ? Number(p.get(k)) : null);
+
+  const down = num('d'), up = num('u'), ping = num('p');
+  if (!(down > 0) || !(up >= 0) || !(ping >= 0)) return null;
+
+  return {
+    down, up, ping,
+    jitter: num('j') ?? 0,
+    loaded: num('l'),
+    loss:   num('x'),
+    t:      (num('t') || 0) * 1000
+  };
+}
+
+/** Draws the result as an image worth posting. */
+function drawCard(r) {
+  const W = 1200, H = 630, s = 2;
+  const cv = document.createElement('canvas');
+  cv.width = W * s; cv.height = H * s;
+  const g = cv.getContext('2d');
+  g.scale(s, s);
+
+  const css = getComputedStyle(document.documentElement);
+  const pick = (n, f) => (css.getPropertyValue(n) || f).trim();
+
+  g.fillStyle = '#0d1017'; g.fillRect(0, 0, W, H);
+  g.fillStyle = pick('--accent', '#ffd233');
+
+  const F = w => `${w} 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+
+  g.font = '700 34px' + F(700).slice(3);
+  g.fillText('⚡ Speed Test', 72, 96);
+
+  const v = verdict(r.down, r.up, r.ping, r.loaded ? r.loaded - r.ping : null, r.loss);
+  g.fillStyle = '#e8ecf4';
+  g.font = '650 46px' + F(650).slice(3);
+  g.fillText(v.headline, 72, 176);
+
+  const cols = [
+    ['DOWNLOAD', fmtSpeed(r.down), 'Mbps'],
+    ['UPLOAD',   fmtSpeed(r.up),   'Mbps'],
+    ['PING',     String(Math.round(r.ping)), 'ms']
+  ];
+  if (r.loaded) cols.push(['PING WHEN BUSY', String(Math.round(r.loaded)), 'ms']);
+
+  const w = (W - 144) / cols.length;
+  cols.forEach(([label, value, unit], i) => {
+    const x = 72 + i * w;
+    g.fillStyle = '#8b95a8';
+    g.font = '600 20px' + F(600).slice(3);
+    g.fillText(label, x, 300);
+    g.fillStyle = '#e8ecf4';
+    g.font = '700 84px' + F(700).slice(3);
+    g.fillText(value, x, 386);
+    const vw = g.measureText(value).width;
+    g.fillStyle = '#8b95a8';
+    g.font = '500 26px' + F(500).slice(3);
+    g.fillText(unit, x + vw + 12, 386);
+  });
+
+  g.fillStyle = '#8b95a8';
+  g.font = '400 24px' + F(400).slice(3);
+  const note = v.note.length > 96 ? v.note.slice(0, 93) + '…' : v.note;
+  g.fillText(note, 72, 470);
+
+  g.fillStyle = pick('--accent', '#ffd233');
+  g.font = '600 24px' + F(600).slice(3);
+  g.fillText('iliaspa.github.io/SpeedTest', 72, 556);
+
+  return cv;
+}
+
+function showShareRow(r) {
+  lastResult = r;
+  $('share').hidden = false;
+}
+
+function flash(msg) {
+  const el = $('shareMsg');
+  el.textContent = msg;
+  clearTimeout(flash.t);
+  flash.t = setTimeout(() => { el.textContent = ''; }, 2600);
+}
+
+/** Render a result that arrived in a link rather than being measured. */
+function renderShared(r) {
+  $('rDown').textContent   = fmtSpeed(r.down);
+  $('rUp').textContent     = fmtSpeed(r.up);
+  $('rPing').textContent   = String(Math.round(r.ping));
+  $('rJitter').textContent = String(Math.round(r.jitter));
+
+  const rise = r.loaded ? r.loaded - r.ping : null;
+  const quality = { ping: r.ping, rise, loaded: r.loaded, loss: r.loss,
+                    spread: null, floorMbps: null, packets: null };
+  const when = r.t ? new Date(r.t).toLocaleString(LANG) : '?';
+
+  lastRender = { down: r.down, up: r.up, ping: r.ping, jitter: r.jitter,
+                 rise, loss: r.loss, quality, dl: null, ul: null,
+                 justRan: false, shared: true, when };
+
+  renderResults(r.down, r.up, r.ping, r.jitter, rise, r.loss);
+  renderQuality(quality);
+
+  show(r.down, 'down');
+  phase(t('btn.shared'));
+
+  $('sharedBanner').textContent = t('share.banner', { when });
+  $('sharedBanner').hidden = false;
+  showShareRow(r);
+}
+
 /* ===========================================================
    History
 
@@ -955,11 +1094,11 @@ function clearHistory() {
 
 function fmtAgo(ts) {
   const s = (Date.now() - ts) / 1000;
-  if (s < 90)    return 'just now';
-  if (s < 3600)  return Math.round(s / 60) + ' min ago';
-  if (s < 86400) return Math.round(s / 3600) + ' hr ago';
+  if (s < 90)    return t('ago.now');
+  if (s < 3600)  return t('ago.min', { n: Math.round(s / 60) });
+  if (s < 86400) return t('ago.hr',  { n: Math.round(s / 3600) });
   const d = Math.round(s / 86400);
-  return d === 1 ? 'yesterday' : d + ' days ago';
+  return d === 1 ? t('ago.yesterday') : t('ago.days', { n: d });
 }
 
 /* ===========================================================
@@ -1001,38 +1140,91 @@ async function locate() {
 /* Requirements are the platforms' own published minimums, rounded up
    a little so a "yes" here means comfortably yes, not barely. */
 const ACTIVITIES = [
-  { icon: '📺', name: '4K / UHD streaming',        need: { down: 25 },            note: 'Netflix, YouTube, Disney+' },
-  { icon: '🎬', name: '1080p HD streaming',        need: { down: 5 },             note: 'the usual "watch a film" case' },
-  { icon: '🎵', name: 'Lossless music streaming',  need: { down: 2 },             note: 'Apple Music, Tidal, Qobuz' },
-  { icon: '💬', name: 'HD video call, 1-on-1',     need: { down: 3, up: 3 },      note: 'Zoom, Meet, FaceTime, Teams' },
-  { icon: '👥', name: 'Group video call in HD',    need: { down: 5, up: 4 },      note: 'a full meeting room of faces' },
-  { icon: '💼', name: 'Working from home',         need: { down: 10, up: 5 },     note: 'VPN, cloud drives, screen share' },
-  { icon: '🕹️', name: 'Online gaming',             need: { down: 3, ping: 80 },   note: 'ping matters far more than speed' },
-  { icon: '☁️', name: 'Cloud gaming at 1080p60',   need: { down: 15, ping: 60 },  note: 'GeForce NOW, Xbox Cloud' },
-  { icon: '🔴', name: 'Live streaming 1080p60',    need: { up: 6 },               note: 'Twitch, YouTube Live' },
-  { icon: '📤', name: 'Cloud backup & big uploads',need: { up: 10 },              note: 'iCloud, Drive, Dropbox sync' }
+  { icon: '📺', k: 'act.4k',     need: { down: 25 } },
+  { icon: '🎬', k: 'act.hd',     need: { down: 5 } },
+  { icon: '🎵', k: 'act.music',  need: { down: 2 } },
+  { icon: '💬', k: 'act.call',   need: { down: 3, up: 3, rise: 250 } },
+  { icon: '👥', k: 'act.group',  need: { down: 5, up: 4, rise: 200 } },
+  { icon: '💼', k: 'act.work',   need: { down: 10, up: 5 } },
+  { icon: '🕹️', k: 'act.game',   need: { down: 3, ping: 80, rise: 150 } },
+  { icon: '☁️', k: 'act.cloud',  need: { down: 15, ping: 60, rise: 100 } },
+  { icon: '🔴', k: 'act.live',   need: { up: 6, loss: 1 } },
+  { icon: '📤', k: 'act.backup', need: { up: 10 } }
 ];
 
 const TRANSFERS = [
-  { name: 'A 25 MB app update',        bytes: 25e6,  dir: 'down' },
-  { name: 'A 1 GB film',               bytes: 1e9,   dir: 'down' },
-  { name: 'A 60 GB game',              bytes: 60e9,  dir: 'down' },
-  { name: '200 photos to the cloud',   bytes: 800e6, dir: 'up',  note: '~800 MB' },
-  { name: 'A 4 GB video to the cloud', bytes: 4e9,   dir: 'up' }
+  { k: 'file.app',    bytes: 25e6,  dir: 'down' },
+  { k: 'file.film',   bytes: 1e9,   dir: 'down' },
+  { k: 'file.game',   bytes: 60e9,  dir: 'down' },
+  { k: 'file.photos', bytes: 800e6, dir: 'up', note: true },
+  { k: 'file.video',  bytes: 4e9,   dir: 'up' }
 ];
 
-function grade(down, up, ping) {
-  if (down < 3 || ping > 250)
-    return ['Slow', 'Fine for email, messaging and reading. Video will struggle.'];
-  if (down < 10)
-    return ['Basic', 'One HD stream or one video call at a time — not both.'];
-  if (down < 30)
-    return ['Comfortable', 'HD everywhere, 4K on one screen, calls without drama.'];
-  if (down < 100)
-    return ['Fast', 'A busy household: several 4K streams, calls and downloads at once.'];
-  if (down < 500)
-    return ['Very fast', 'Effectively unlimited for everyday use. Big downloads land in minutes.'];
-  return ['Blazing', 'Gigabit-class. Nothing you do day to day will be the bottleneck.'];
+/* Raw speed, which is all the headline used to consider. */
+function speedTier(down) {
+  const n = down < 3 ? 0 : down < 10 ? 1 : down < 30 ? 2 : down < 100 ? 3 : down < 500 ? 4 : 5;
+  return [n, t(`speed.${n}`), t(`speed.${n}.note`)];
+}
+
+/**
+ * How the line behaves rather than how big it is: idle ping, how far
+ * latency climbs when busy, and how many packets go missing. This is
+ * what decides whether calls and games feel right, and it is entirely
+ * independent of megabits.
+ */
+function responsiveness(ping, rise, loss) {
+  let tier = 4;
+  const faults = [];
+
+  if (ping > 150)      { tier = Math.min(tier, 1); faults.push(t('fault.ping')); }
+  else if (ping > 80)  { tier = Math.min(tier, 3); }
+
+  if (rise != null) {
+    if (rise >= 250)      { tier = Math.min(tier, 0); faults.push(t('fault.collapse')); }
+    else if (rise >= 125) { tier = Math.min(tier, 1); faults.push(t('fault.climb')); }
+    else if (rise >= 60)  { tier = Math.min(tier, 2); faults.push(t('fault.build')); }
+  }
+
+  if (loss != null) {
+    if (loss >= 2.5)     { tier = Math.min(tier, 0); faults.push(t('fault.lossHeavy')); }
+    else if (loss >= 1)  { tier = Math.min(tier, 1); faults.push(t('fault.loss')); }
+    else if (loss >= 0.3){ tier = Math.min(tier, 3); }
+  }
+
+  return { tier, faults };
+}
+
+/**
+ * The headline. A connection can be fast and still miserable, so the
+ * verdict has to carry both halves — saying "Very fast" about a line
+ * whose ping triples under load is the sort of thing that makes people
+ * distrust speed tests.
+ */
+function verdict(down, up, ping, rise, loss) {
+  const [sTier, word, blurb] = speedTier(down);
+  const r = responsiveness(ping, rise, loss);
+  const faults = r.faults.slice(0, 2).join(t('verdict.and'));
+  const lossLed = loss != null && loss >= 1;
+
+  if (sTier >= 2 && r.tier <= 1) {
+    return lossLed
+      ? { headline: t('verdict.paper.head', { word }), note: t('verdict.paper.note', { faults }) }
+      : { headline: t('verdict.busy.head',  { word }), note: t('verdict.busy.note',  { faults }) };
+  }
+
+  if (sTier <= 1 && r.tier >= 4) {
+    return { headline: t('verdict.steady.head', { word }), note: t('verdict.steady.note', { blurb }) };
+  }
+
+  if (r.tier <= 1 && faults) {
+    return { headline: word, note: t('verdict.also.note', { blurb, faults }) };
+  }
+
+  if (r.tier === 2) {
+    return { headline: word, note: t('verdict.mild.note', { blurb }) };
+  }
+
+  return { headline: word, note: blurb };
 }
 
 /**
@@ -1040,10 +1232,10 @@ function grade(down, up, ping) {
  * only worth as much as its steadiness, so say so plainly.
  */
 function steadiness(spread) {
-  if (spread <= 0.08) return ['steady',   'yes',  'held its speed throughout'];
-  if (spread <= 0.20) return ['variable', 'wait', 'wandered a little while measuring'];
-  if (spread <= 0.45) return ['unsteady', 'wait', 'moved around a lot — treat as rough'];
-  return ['erratic', 'no', 'swung wildly — something is congested'];
+  const k = spread <= 0.08 ? 'steady' : spread <= 0.20 ? 'variable'
+          : spread <= 0.45 ? 'unsteady' : 'erratic';
+  const tone = k === 'steady' ? 'yes' : k === 'erratic' ? 'no' : 'wait';
+  return [t(`steady.${k}`), tone, t(`steady.${k}.note`)];
 }
 
 /**
@@ -1053,39 +1245,40 @@ function steadiness(spread) {
  */
 function bloatGrade(rise) {
   if (rise == null || !isFinite(rise)) return null;
-  if (rise < 30)  return ['A', 'yes',  'stays responsive even when busy'];
-  if (rise < 60)  return ['B', 'yes',  'barely suffers under load'];
-  if (rise < 125) return ['C', 'wait', 'calls and games will wobble during downloads'];
-  if (rise < 250) return ['D', 'no',   'anything live breaks up while the line is busy'];
-  return ['F', 'no', 'unusable for calls or gaming whenever anything downloads'];
+  const g = rise < 30 ? 'A' : rise < 60 ? 'B' : rise < 125 ? 'C' : rise < 250 ? 'D' : 'F';
+  const tone = g === 'A' || g === 'B' ? 'yes' : g === 'C' ? 'wait' : 'no';
+  return [g, tone, t(`bloat.${g}`)];
 }
 
 function lossVerdict(pct) {
   if (pct == null) return null;
-  if (pct < 0.1) return ['none worth noting', 'yes'];
-  if (pct < 1)   return [pct.toFixed(2) + '% of packets resent', 'wait'];
-  if (pct < 2.5) return [pct.toFixed(1) + '% lost — calls will glitch', 'no'];
-  return [pct.toFixed(1) + '% lost — badly degraded', 'no'];
+  const n = pct.toFixed(pct < 1 ? 2 : 1);
+  if (pct < 0.1) return [t('loss.none'), 'yes'];
+  if (pct < 1)   return [t('loss.some',  { pct: n }), 'wait'];
+  if (pct < 2.5) return [t('loss.bad',   { pct: n }), 'no'];
+  return           [t('loss.awful', { pct: n }), 'no'];
 }
 
 /* `up` is null while the upload phase is still running. Anything that
    depends on it is marked pending rather than guessed at. */
-function reason(need, down, up, ping) {
+function reason(need, down, up, ping, rise, loss) {
   const missing = [];
-  if (need.down && down < need.down)         missing.push(`${need.down} Mbps down`);
-  if (need.up && up !== null && up < need.up) missing.push(`${need.up} Mbps up`);
-  if (need.ping && ping > need.ping)         missing.push(`ping under ${need.ping} ms`);
-  return missing.length ? 'needs ' + missing.join(' · ') : null;
+  if (need.down && down < need.down)          missing.push(t('acts.needsDown', { n: need.down }));
+  if (need.up && up !== null && up < need.up) missing.push(t('acts.needsUp',   { n: need.up }));
+  if (need.ping && ping > need.ping)          missing.push(t('acts.needsPing', { n: need.ping }));
+  if (need.rise && rise != null && rise > need.rise) missing.push(t('acts.needsCalm'));
+  if (need.loss && loss != null && loss > need.loss) missing.push(t('acts.needsLoss'));
+  return missing.length ? t('acts.needs', { list: missing.join(' · ') }) : null;
 }
 
-function renderResults(down, up, ping, jitter) {
+function renderResults(down, up, ping, jitter, rise, loss) {
   const waiting = up === null;
 
   /* Activities */
   const acts = $('acts');
   acts.innerHTML = '';
   for (const a of ACTIVITIES) {
-    const missing = reason(a.need, down, up, ping);
+    const missing = reason(a.need, down, up, ping, rise, loss);
 
     // Only pending if upload is the one thing left that could fail it.
     const pending = waiting && !!a.need.up && !missing;
@@ -1095,8 +1288,8 @@ function renderResults(down, up, ping, jitter) {
     li.innerHTML = `
       <span class="ico" aria-hidden="true">${a.icon}</span>
       <span class="body">
-        <span class="name${ok || pending ? '' : ' off'}">${a.name}</span>
-        <span class="note">${pending ? 'checking upload…' : ok ? a.note : missing}</span>
+        <span class="name${ok || pending ? '' : ' off'}">${t(a.k)}</span>
+        <span class="note">${pending ? t('acts.waiting') : ok ? t(a.k + '.note') : missing}</span>
       </span>
       <span class="mark ${pending ? 'wait' : ok ? 'yes' : 'no'}">${pending ? '·' : ok ? '✓' : '✕'}</span>`;
     acts.appendChild(li);
@@ -1105,18 +1298,18 @@ function renderResults(down, up, ping, jitter) {
   /* Transfer times */
   const times = $('times');
   times.innerHTML = '';
-  for (const t of TRANSFERS) {
-    const pending = waiting && t.dir === 'up';
-    const mbps = t.dir === 'down' ? down : up;
+  for (const f of TRANSFERS) {
+    const pending = waiting && f.dir === 'up';
+    const mbps = f.dir === 'down' ? down : up;
     const li = document.createElement('li');
     li.innerHTML = `
-      <span class="mark">${t.dir === 'down' ? '↓' : '↑'}</span>
+      <span class="mark">${f.dir === 'down' ? '↓' : '↑'}</span>
       <span class="body">
-        <span class="name">${t.name}</span>
-        ${t.note ? `<span class="note">${t.note}</span>` : ''}
+        <span class="name">${t(f.k)}</span>
+        ${f.note ? `<span class="note">${t(f.k + '.note')}</span>` : ''}
       </span>
       <span class="amount${pending ? ' dim' : ''}">${
-        pending ? '…' : fmtDuration((t.bytes * 8) / (mbps * 1e6))
+        pending ? '…' : fmtDuration((f.bytes * 8) / (mbps * 1e6))
       }</span>`;
     times.appendChild(li);
   }
@@ -1125,9 +1318,9 @@ function renderResults(down, up, ping, jitter) {
   const sim = $('sim');
   sim.innerHTML = '';
   const rows = [
-    ['📺', '4K streams',     Math.floor(down / 25),                        false],
-    ['🎬', '1080p streams',  Math.floor(down / 5),                         false],
-    ['💬', 'HD video calls', waiting ? 0 : Math.floor(Math.min(down / 3, up / 3)), waiting]
+    ['📺', t('sim.4k'),    Math.floor(down / 25), false],
+    ['🎬', t('sim.hd'),    Math.floor(down / 5),  false],
+    ['💬', t('sim.calls'), waiting ? 0 : Math.floor(Math.min(down / 3, up / 3)), waiting]
   ];
   for (const [icon, label, n, pending] of rows) {
     const li = document.createElement('li');
@@ -1135,51 +1328,48 @@ function renderResults(down, up, ping, jitter) {
       <span class="mark">${icon}</span>
       <span class="body"><span class="name">${label}</span></span>
       <span class="amount${pending || !n ? ' dim' : ''}">${
-        pending ? '…' : n < 1 ? 'not really' : n >= 20 ? '20+' : n
+        pending ? '…' : n < 1 ? t('sim.none') : n >= 20 ? '20+' : n
       }</span>`;
     sim.appendChild(li);
   }
 
-  // The grade reads download and ping only, so it is final either way.
-  const [g, note] = grade(down, up, ping);
-  $('grade').textContent = g;
-  $('gradeNote').textContent = note;
+  const v = verdict(down, up, ping, rise, loss);
+  $('grade').textContent = v.headline;
+  $('gradeNote').textContent = v.note;
 
   for (const id of ['verdict', 'canDo', 'timings', 'household']) $(id).hidden = false;
 }
 
 /** The "when the line is busy" card: bufferbloat, loss, steadiness. */
-function renderQuality(idlePing, dl, ul) {
+function renderQuality({ ping, rise, loaded, loss, spread, floorMbps, packets }) {
   const rows = [];
 
-  const worstLoaded = Math.max(dl.loaded || 0, ul.loaded || 0);
-  const rise = worstLoaded > 0 ? worstLoaded - idlePing : null;
   const bloat = bloatGrade(rise);
-
   if (bloat) {
     const [letter, tone, blurb] = bloat;
-    rows.push([letter, 'Delay when busy', tone,
-      `ping goes ${Math.round(idlePing)} ms → ${Math.round(worstLoaded)} ms — ${blurb}`]);
+    rows.push([letter, t('qual.bloat'), tone,
+      t('qual.bloatDetail', { idle: Math.round(ping), loaded: Math.round(loaded), blurb })]);
   }
 
-  const loss = lossVerdict(lossPercent());
-  if (loss) {
-    const [text, tone] = loss;
-    const t = tcpTotals();
-    rows.push(['⇄', 'Packet loss', tone,
-      `${text} — the server resent ${t.retrans.toLocaleString()} of the ` +
-      `${t.sent.toLocaleString()} packets it sent you`]);
+  const lv = lossVerdict(loss);
+  if (lv) {
+    const [text, tone] = lv;
+    rows.push(['⇄', t('qual.loss'), tone, packets
+      ? t('qual.lossDetail', { text,
+          retrans: packets.retrans.toLocaleString(LANG),
+          sent: packets.sent.toLocaleString(LANG) })
+      : text]);
   }
 
-  const floorMbps = browserLimited(dl.mbps);
   if (floorMbps) {
-    rows.push(['↑', 'Faster than this page can measure', 'wait',
-      `one connection alone delivered ${fmtSpeed(floorMbps)} Mbps — a browser tab ` +
-      `cannot pull harder than this, so treat the figure above as a floor`]);
+    rows.push(['↑', t('qual.floor'), 'wait',
+      t('qual.floorDetail', { mbps: fmtSpeed(floorMbps) })]);
   }
 
-  const [word, tone, blurb] = steadiness(Math.max(dl.spread || 0, ul.spread || 0));
-  rows.push(['~', 'Steadiness', tone, `${word} — ${blurb}`]);
+  if (spread != null) {
+    const [word, tone, blurb] = steadiness(spread);
+    rows.push(['~', t('qual.steady'), tone, t('qual.steadyDetail', { word, blurb })]);
+  }
 
   const el = $('qual');
   el.innerHTML = '';
@@ -1193,7 +1383,7 @@ function renderQuality(idlePing, dl, ul) {
       </span>`;
     el.appendChild(li);
   }
-  $('quality').hidden = false;
+  $('quality').hidden = rows.length === 0;
 }
 
 /**
@@ -1214,7 +1404,7 @@ function renderHistory(justRan) {
   el.innerHTML = '';
   for (const [i, r] of recent.entries()) {
     // Only the newest row is "this run", and only right after one ran.
-    const tag = justRan && i === 0 ? ' <em class="tag">this run</em>' : '';
+    const tag = justRan && i === 0 ? ` <em class="tag">${t('hist.thisRun')}</em>` : '';
     const li = document.createElement('li');
     li.innerHTML = `
       <span class="body">
@@ -1234,19 +1424,20 @@ function renderHistory(justRan) {
     const usual = median(past);
     const current = list[list.length - 1].down;
     const n = past.length;
-    const runs = n === 1 ? 'run' : 'runs';
+    const runs = n === 1 ? t('hist.run') : t('hist.runs');
 
     if (usual > 0) {
       const diff = ((current - usual) / usual) * 100;
       note.textContent = Math.abs(diff) < 12
-        ? `Typical for this connection — your median across ${n} earlier ${runs} is ${fmtSpeed(usual)} Mbps.`
-        : `${Math.abs(Math.round(diff))}% ${diff > 0 ? 'faster' : 'slower'} than usual — ` +
-          `your median across ${n} earlier ${runs} is ${fmtSpeed(usual)} Mbps.`;
+        ? t('hist.typical', { n, runs, usual: fmtSpeed(usual) })
+        : t('hist.differs', { pct: Math.abs(Math.round(diff)), n, runs,
+                              usual: fmtSpeed(usual),
+                              dir: diff > 0 ? t('hist.faster') : t('hist.slower') });
     }
   } else if (list.length >= 2) {
     const all = list.map(r => r.down);
-    note.textContent = `Median of your last ${list.length} runs: ${fmtSpeed(median(all))} Mbps, ` +
-      `ranging ${fmtSpeed(Math.min(...all))}–${fmtSpeed(Math.max(...all))}.`;
+    note.textContent = t('hist.summary', { n: list.length, mid: fmtSpeed(median(all)),
+      lo: fmtSpeed(Math.min(...all)), hi: fmtSpeed(Math.max(...all)) });
   }
 
   card.hidden = false;
@@ -1256,7 +1447,65 @@ function renderHistory(justRan) {
 function showRange(id, r) {
   const el = $(id);
   if (!r || !(r.hi > 0) || r.spread < 0.08) { el.textContent = ''; return; }
-  el.textContent = `ranged ${fmtSpeed(r.lo)}–${fmtSpeed(r.hi)}`;
+  el.textContent = t('tile.ranged', { lo: fmtSpeed(r.lo), hi: fmtSpeed(r.hi) });
+}
+
+
+/* ===========================================================
+   Applying the chosen language
+   =========================================================== */
+
+/* Enough of the last render to rebuild it in another language. */
+let lastRender = null;
+
+function applyStaticText() {
+  document.documentElement.lang = LANG;
+  document.title = `${t('head.title')} — ${t('head.sub')}`;
+
+  for (const el of document.querySelectorAll('[data-i18n]')) {
+    el.textContent = t(el.dataset.i18n);
+  }
+
+  for (const el of document.querySelectorAll('[data-i18n-html]')) {
+    const key = el.dataset.i18nHtml;
+
+    if (/^limits\.\d$/.test(key)) {
+      // Each limit is a bold claim followed by its explanation.
+      el.innerHTML = `<b>${t(key + '.b')}</b>${t(key)}`;
+    } else if (key === 'foot.about') {
+      el.innerHTML =
+        `${t('foot.about1')} <a href="https://speed.cloudflare.com" rel="noopener">` +
+        `${t('foot.about2')}</a>${t('foot.about3')} ` +
+        `<a href="https://github.com/IliasPa/SpeedTest" rel="noopener">${t('foot.source')}</a>.`;
+    } else {
+      el.innerHTML = t(key);
+    }
+  }
+
+  const btn = $('langBtn');
+  btn.textContent = t('lang.other');
+  btn.setAttribute('aria-label', t('lang.label'));
+
+  // The gauge unit and the idle button label are not static markup.
+  if (!ui.go.disabled) {
+    phase(lastRender ? t('btn.done') : loadHistory().length ? t('btn.welcome') : t('btn.ready'));
+  }
+  if (ui.unit.textContent) ui.unit.textContent = t('unit.mbps');
+}
+
+/** Redraw whatever is on screen, in the language now selected. */
+function rerender() {
+  applyStaticText();
+  if (!lastRender) { renderHistory(false); return; }
+
+  const r = lastRender;
+  renderResults(r.down, r.up, r.ping, r.jitter, r.rise, r.loss);
+  renderQuality(r.quality);
+  showRange('rDownRange', r.dl);
+  showRange('rUpRange', r.ul);
+  renderHistory(r.justRan);
+  if (r.usage) $('usage').textContent = r.usage();
+  if (r.shared) $('sharedBanner').textContent = t('share.banner', { when: r.when });
 }
 
 /* ===========================================================
@@ -1283,14 +1532,14 @@ function setGauge(mbps) {
 
 function show(mbps, kind) {
   ui.value.textContent = fmtSpeed(mbps);
-  ui.unit.textContent = 'Mbps';
+  ui.unit.textContent = t('unit.mbps');
   ui.arc.classList.toggle('up', kind === 'up');
   setGauge(mbps);
 }
 
 function showPing(ms) {
   ui.value.textContent = Math.round(ms);
-  ui.unit.textContent = 'ms ping';
+  ui.unit.textContent = t('unit.msPing');
   setGauge(0);
 }
 
@@ -1298,15 +1547,30 @@ function showPing(ms) {
 function phase(text) { ui.goMain.textContent = text; }
 
 function used(bytes) {
-  ui.goSub.textContent = bytes > 0 ? `${fmtBytes(bytes)} used` : '';
+  ui.goSub.textContent = bytes > 0 ? t('btn.used', { bytes: fmtBytes(bytes) }) : '';
+}
+
+/* Quick mode reuses the Data Saver budget, but as a per-run choice
+   rather than a browser setting. Applied fresh each run so unticking it
+   restores the full measurement. */
+function applyBudget(quick) {
+  const frugal = quick || SAVE_DATA;
+  Object.assign(CFG.down, frugal
+    ? { warmupMs: 250, minMs: 500,  maxBytes: 11 << 20, sampleMs: 40 }
+    : { warmupMs: 700, minMs: 1600, maxBytes: 400 << 20, sampleMs: 100 });
+  Object.assign(CFG.up, frugal
+    ? { warmupMs: 250, minMs: 600,  maxBytes: 5 << 20,  sampleMs: 40 }
+    : { warmupMs: 600, minMs: 1800, maxBytes: 200 << 20, sampleMs: 100 });
+  return frugal;
 }
 
 async function run() {
   ui.go.disabled = true;
+  const frugal = applyBudget($('quick').checked);
 
   // The heading and the tiles are permanent fixtures; only the sections
   // below them come and go, so the layout above never jumps.
-  for (const id of ['verdict', 'quality', 'canDo', 'timings', 'household']) $(id).hidden = true;
+  for (const id of ['verdict', 'quality', 'canDo', 'timings', 'household', 'share', 'sharedBanner']) $(id).hidden = true;
   for (const id of ['rDown', 'rUp', 'rPing', 'rJitter']) $(id).textContent = '—';
   for (const id of ['rDownRange', 'rUpRange']) $(id).textContent = '';
   $('meta').textContent = '';
@@ -1322,12 +1586,12 @@ async function run() {
     /* Location, in the background — never blocks the test. */
     const where = locate();
 
-    phase('Measuring latency…');
+    phase(t('btn.latency'));
     const lat = await measureLatency(showPing);
     $('rPing').textContent   = Math.round(lat.ping);
     $('rJitter').textContent = Math.round(lat.jitter);
 
-    phase('Measuring download…');
+    phase(t('btn.download'));
     ui.arc.classList.remove('up');
     const dl = await measureDownload((mbps, bytes) => {
       show(mbps, 'down');
@@ -1339,9 +1603,10 @@ async function run() {
     // Show everything download and ping already settle, and leave only
     // the upload-dependent rows pending. Five of the ten activities, the
     // download timings and the grade are final at this point.
-    renderResults(dl.mbps, null, lat.ping, lat.jitter);
+    renderResults(dl.mbps, null, lat.ping, lat.jitter,
+                  dl.loaded > 0 ? dl.loaded - lat.ping : null, lossPercent());
 
-    phase('Measuring upload…');
+    phase(t('btn.upload'));
     $('rUp').textContent = '…';
     const ulStart = totalBytes;
     const ul = await measureUpload(dl.mbps * 1e6 / 8, (mbps, bytes) => {
@@ -1354,8 +1619,33 @@ async function run() {
     showRange('rUpRange', ul);
 
     show(dl.mbps, 'down');
-    renderResults(dl.mbps, ul.mbps, lat.ping, lat.jitter);
-    renderQuality(lat.ping, dl, ul);
+
+    $('liveStatus').textContent = t('sr.done', {
+      down: fmtSpeed(dl.mbps), up: fmtSpeed(ul.mbps), ping: Math.round(lat.ping) });
+
+    const worstLoaded = Math.max(dl.loaded || 0, ul.loaded || 0);
+    const rise = worstLoaded > 0 ? worstLoaded - lat.ping : null;
+    const loss = lossPercent();
+
+    const quality = {
+      ping: lat.ping, rise, loaded: worstLoaded, loss,
+      spread: Math.max(dl.spread || 0, ul.spread || 0),
+      floorMbps: browserLimited(dl.mbps),
+      packets: tcpTotals().sent >= 200 ? tcpTotals() : null
+    };
+
+    lastRender = {
+      down: dl.mbps, up: ul.mbps, ping: lat.ping, jitter: lat.jitter,
+      rise, loss, quality, dl, ul, justRan: true
+    };
+
+    renderResults(dl.mbps, ul.mbps, lat.ping, lat.jitter, rise, loss);
+    renderQuality(quality);
+
+    showShareRow({
+      t: Date.now(), down: dl.mbps, up: ul.mbps, ping: lat.ping,
+      jitter: lat.jitter, loaded: worstLoaded || null, loss
+    });
 
     saveRun({
       t: Date.now(),
@@ -1372,25 +1662,27 @@ async function run() {
     const w = await where;
     if (w) {
       const city = COLOS[w.colo];
-      $('meta').textContent =
-        `Tested against ${city ? city + ' (' + w.colo + ')' : w.colo} · your IP ${w.ip}`;
+      $('meta').textContent = t('foot.meta', {
+        where: city ? `${city} (${w.colo})` : w.colo, ip: w.ip });
     }
 
     const secs = (now() - started) / 1000;
+    lastRender.usage = () =>
+      t('foot.usage', { bytes: fmtBytes(totalBytes), secs: secs.toFixed(1) }) +
+      (frugal ? t(SAVE_DATA ? 'foot.usageSaver' : 'foot.usageQuick') : t('foot.usageNormal'));
     $('usage').textContent =
-      `${fmtBytes(totalBytes)} of data in ${secs.toFixed(1)} s` + (SAVE_DATA
-        ? ' — Data Saver is on, so the test stopped early. On a fast line that reads low.'
-        : ' — a typical speed test spends 5–20× that.');
+      t('foot.usage', { bytes: fmtBytes(totalBytes), secs: secs.toFixed(1) }) +
+      (frugal ? t(SAVE_DATA ? 'foot.usageSaver' : 'foot.usageQuick') : t('foot.usageNormal'));
 
   } catch (err) {
     console.error(err);
+    $('liveStatus').textContent = t('sr.failed');
     ui.value.textContent = '—';
-    ui.unit.textContent = 'error';
-    $('meta').textContent =
-      'Could not reach the test server. Check your connection, or disable a VPN / content blocker and try again.';
+    ui.unit.textContent = t('unit.error');
+    $('meta').textContent = t('err.unreachable');
   } finally {
     ui.go.disabled = false;
-    phase(done ? 'Done — test again' : 'Something went wrong — try again');
+    phase(done ? t('btn.done') : t('btn.failed'));
   }
 }
 
@@ -1452,8 +1744,58 @@ $('clearHist').addEventListener('click', () => {
   $('history').hidden = true;
 });
 
+$('copyLink').addEventListener('click', async () => {
+  if (!lastResult) return;
+  const url = shareLink(lastResult);
+  try {
+    await navigator.clipboard.writeText(url);
+    flash(t('share.copied'));
+  } catch {
+    // Clipboard refused (permissions, or an insecure origin): fall back
+    // to putting it in the address bar so it can be copied by hand.
+    location.hash = url.split('#')[1] || '';
+    flash(t('share.inBar'));
+  }
+});
+
+$('saveCard').addEventListener('click', () => {
+  if (!lastResult) return;
+  try {
+    const cv = drawCard(lastResult);
+    cv.toBlob(blob => {
+      if (!blob) { flash(t('share.failed')); return; }
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'speedtest.png';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      flash(t('share.saved'));
+    }, 'image/png');
+  } catch {
+    flash(t('share.failed'));
+  }
+});
+
+$('langBtn').addEventListener('click', () => {
+  setLang(LANG === 'en' ? 'el' : 'en');
+  rerender();
+});
+
+applyStaticText();
+
 /* Show past runs on arrival, before anything is measured. */
 renderHistory(false);
+
+/* Someone who has already measured once knows what the full test costs,
+   so they are the right person to offer a cheaper repeat to. */
+if (loadHistory().length > 0) {
+  $('quickWrap').hidden = false;
+  phase(t('btn.welcome'));
+}
+
+/* A result may have arrived in the link rather than from a test. */
+const shared = readShared();
+if (shared) renderShared(shared);
 
 /* Each card explains itself, in place. */
 for (const btn of document.querySelectorAll('[data-note]')) {
@@ -1462,5 +1804,13 @@ for (const btn of document.querySelectorAll('[data-note]')) {
     const opening = note.hidden;
     note.hidden = !opening;
     btn.setAttribute('aria-expanded', String(opening));
+  });
+}
+
+/* Register the offline shell. Failure is harmless — the page works
+   either way; this only makes it installable and survivable offline. */
+if ('serviceWorker' in navigator) {
+  addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
   });
 }

@@ -6,7 +6,7 @@ gaming, how long a 60 GB game takes.
 
 **→ [iliaspa.github.io/SpeedTest](https://iliaspa.github.io/SpeedTest/)**
 
-No build step, no dependencies, no tracking. Three static files.
+No build step, no dependencies, no tracking. Static files only — installable, works offline, English and Greek.
 
 Version history and what is planned next: **[CHANGELOG.md](CHANGELOG.md)**.
 
@@ -127,6 +127,34 @@ faster than everything measured across all of them, the result is reported as a 
 so treat the figure above as a floor."*
 
 Better to say the number is a lower bound than to quietly print a wrong one.
+
+## Measured against fast.com
+
+Three alternating runs, same machine, same minutes, interleaved so neither gets a
+better slice of a variable line. Medians:
+
+| | This test | fast.com |
+|---|---|---|
+| Reported speed | 239 Mbps | **310 Mbps** |
+| Time to finish | **7.6 s** | 12.9 s |
+| Data spent | **57–85 MB** | ~341–367 MB |
+
+Read that honestly. **fast.com reports about 30% higher than this test does.** Two
+reasons, both real: it measures to Netflix's CDN rather than Cloudflare's edge, so it is
+a different path; and a heavier client that spends five times the data will pull harder
+on a fast line than this one does. If you want the single largest number your line can
+produce, fast.com will give it to you.
+
+What this test gives you instead is the same answer for **a fifth of the data and half
+the time**, plus latency under load, packet loss and a range — none of which fast.com
+reports at all.
+
+Both figures were 3× variable across the session (this test read 162–268 Mbps on the same
+line within minutes), which is exactly why past runs are kept. Treat the comparison as
+indicative, not decisive, and re-run it on your own line before believing either number.
+
+*Reproduce it:* alternate the two tests three times each, wired, with nothing else on the
+network, and compare medians rather than any single run.
 
 ## Accuracy, honestly
 
