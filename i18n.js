@@ -11,6 +11,7 @@
 const STRINGS = {
   en: {
     'lang.other': 'Ελληνικά',
+    'lang.flag': '🇬🇷',
     'lang.label': 'Switch to Greek',
 
     'head.title': 'Speed Test',
@@ -22,7 +23,7 @@ const STRINGS = {
     'btn.latency': 'Measuring latency…',
     'btn.download': 'Measuring download…',
     'btn.upload': 'Measuring upload…',
-    'btn.done': 'Done — test again',
+    'btn.done': 'Done — Test again',
     'btn.failed': 'Something went wrong — try again',
     'btn.shared': 'Run your own test',
     'btn.used': '{bytes} used',
@@ -74,6 +75,8 @@ const STRINGS = {
     'qual.note': 'Speed is measured on an idle line, but you rarely use an idle line. These are taken <em>while</em> the test is saturating your connection, which is when calls stutter and games lag. A fast connection can still fail here — and that failure is what people actually notice.',
     'qual.bloat': 'Delay when busy',
     'qual.bloatDetail': 'ping goes {idle} ms → {loaded} ms — {blurb}',
+    'qual.bloatFlat': 'no measurable increase — ping stayed around {idle} ms even under load',
+    'card.noRise': 'no rise',
     'qual.loss': 'Packet loss',
     'qual.lossDetail': '{text} — the server resent {retrans} of the {sent} packets it sent you',
     'qual.floor': 'Faster than this page can measure',
@@ -202,6 +205,7 @@ const STRINGS = {
 
   el: {
     'lang.other': 'English',
+    'lang.flag': '🇬🇧',
     'lang.label': 'Αλλαγή σε αγγλικά',
 
     'head.title': 'Τεστ Ταχύτητας',
@@ -213,7 +217,7 @@ const STRINGS = {
     'btn.latency': 'Μέτρηση καθυστέρησης…',
     'btn.download': 'Μέτρηση λήψης…',
     'btn.upload': 'Μέτρηση αποστολής…',
-    'btn.done': 'Έτοιμο — νέα μέτρηση',
+    'btn.done': 'Έτοιμο — Νέα μέτρηση',
     'btn.failed': 'Κάτι πήγε λάθος — δοκιμάστε ξανά',
     'btn.shared': 'Μετρήστε τη δική σας σύνδεση',
     'btn.used': '{bytes} σε χρήση',
@@ -265,6 +269,8 @@ const STRINGS = {
     'qual.note': 'Η ταχύτητα μετριέται σε αδρανή γραμμή, αλλά σπάνια χρησιμοποιείτε αδρανή γραμμή. Αυτά τα νούμερα λαμβάνονται <em>ενώ</em> το τεστ φορτώνει στο μέγιστο τη σύνδεσή σας — δηλαδή τη στιγμή που οι κλήσεις κολλούν και τα παιχνίδια καθυστερούν. Μια γρήγορη σύνδεση μπορεί κάλλιστα να αποτύχει εδώ, και αυτή η αποτυχία είναι που όντως ενοχλεί.',
     'qual.bloat': 'Καθυστέρηση με φόρτο',
     'qual.bloatDetail': 'το ping πάει από {idle} ms σε {loaded} ms — {blurb}',
+    'qual.bloatFlat': 'καμία μετρήσιμη αύξηση — το ping έμεινε γύρω στα {idle} ms ακόμη και με φόρτο',
+    'card.noRise': 'καμία αύξηση',
     'qual.loss': 'Απώλεια πακέτων',
     'qual.lossDetail': '{text} — ο διακομιστής ξαναέστειλε {retrans} από τα {sent} πακέτα που σας έστειλε',
     'qual.floor': 'Πιο γρήγορη από όσο μπορεί να μετρήσει η σελίδα',

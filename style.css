@@ -14,6 +14,8 @@
   --no-bg:     rgba(255, 107, 107, .13);
   --wait-bg:   rgba(255, 255, 255, .06);
   --line-soft: rgba(255, 255, 255, .055);
+  --yes-line:  rgba(56, 224, 165, .28);
+  --no-line:   rgba(255, 107, 107, .26);
   --radius:    14px;
   --maxw:      620px;
 }
@@ -34,6 +36,8 @@
     --no-bg:    rgba(214, 58, 58, .09);
     --wait-bg:  rgba(0, 0, 0, .05);
     --line-soft: rgba(0, 0, 0, .055);
+    --yes-line:  rgba(4, 153, 106, .30);
+    --no-line:   rgba(214, 58, 58, .26);
   }
 }
 
@@ -77,13 +81,14 @@ a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 a:hover { color: var(--accent); }
 
 .wrap {
+  position: relative;
   max-width: var(--maxw);
   margin: 0 auto;
-  padding: 32px 20px 64px;
+  padding: 24px 20px 64px;
 }
 
 /* ── Header ─────────────────────────────────────────────── */
-.head { text-align: center; margin-bottom: 8px; }
+.head { text-align: center; margin-bottom: 0; }
 
 .head h1 {
   margin: 0;
@@ -95,16 +100,17 @@ a:hover { color: var(--accent); }
 .bolt { color: var(--accent); }
 
 .sub {
-  margin: 6px 0 0;
+  margin: 5px 0 0;
   font-size: 14px;
   color: var(--fg-dim);
 }
 
 /* ── Gauge ──────────────────────────────────────────────── */
+/* The reading is the point of the page, so it sits high. */
 .gauge-box {
   position: relative;
-  margin: 12px auto 0;
-  max-width: 320px;
+  margin: -4px auto 0;
+  max-width: 330px;
 }
 
 .gauge { display: block; width: 100%; height: auto; overflow: visible; }
@@ -463,13 +469,34 @@ a:hover { color: var(--accent); }
 .mark.wait { color: var(--fg-faint); }
 
 /* ── Activity rows ──────────────────────────────────────────
-   A checklist: the emoji says what it is, the badge on the right
-   says yes or no, and the verdicts line up in one column so the
-   whole card can be read down its right edge. */
+   Each activity is its own tinted card: green when the line clears it,
+   red when it does not. The colour is the answer, so no tick or cross
+   is needed — but colour is never the *only* signal, since the note
+   underneath always names what falls short. */
+.acts { display: grid; gap: 8px; }
+
 .acts li {
   align-items: center;
-  gap: 13px;
-  padding: 12px 0;
+  gap: 12px;
+  padding: 12px 13px;
+  border: 1px solid transparent;
+  border-top: 1px solid transparent;   /* overrides the shared divider */
+  border-radius: 11px;
+}
+
+.acts li.yes {
+  background: var(--yes-bg);
+  border-color: var(--yes-line);
+}
+
+.acts li.no {
+  background: var(--no-bg);
+  border-color: var(--no-line);
+}
+
+.acts li.wait {
+  background: var(--wait-bg);
+  border-color: var(--line);
 }
 
 .acts .ico {
@@ -482,25 +509,13 @@ a:hover { color: var(--accent); }
 
 .acts .name {
   font-size: 14.5px;
-  font-weight: 500;
+  font-weight: 550;
 }
+
+.acts li.no .name { color: var(--fg-dim); }
 
 .acts .note { margin-top: 3px; }
 
-.acts .mark {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  font-size: 12px;
-  line-height: 1;
-}
-
-.acts .mark.yes  { background: var(--yes-bg);  color: var(--accent-2); }
-.acts .mark.no   { background: var(--no-bg);   color: var(--bad); }
-.acts .mark.wait { background: var(--wait-bg); color: var(--fg-faint); }
 
 .body { flex: 1 1 auto; min-width: 0; }
 
@@ -635,16 +650,20 @@ a:hover { color: var(--accent); }
 
 /* ── Language toggle ────────────────────────────────────── */
 .lang {
-  margin-top: 10px;
-  padding: 5px 12px;
+  position: absolute;
+  top: 18px;
+  right: 20px;
+  z-index: 2;
+  width: 38px;
+  height: 38px;
+  padding: 0;
   border: 1px solid var(--line);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--fg-dim);
-  font: inherit;
-  font-size: 12px;
+  border-radius: 50%;
+  background: var(--bg-tile);
+  font-size: 19px;
+  line-height: 1;
   cursor: pointer;
-  transition: color .15s ease, border-color .15s ease;
+  transition: border-color .15s ease, transform .12s ease;
 }
 
-.lang:hover { color: var(--accent); border-color: var(--accent); }
+.lang:hover { border-color: var(--accent); transform: translateY(-1px); }

@@ -962,58 +962,113 @@ function readShared() {
 
 /** Draws the result as an image worth posting. */
 function drawCard(r) {
-  const W = 1200, H = 630, s = 2;
+  const W = 1200, H = 675, s = 2;
   const cv = document.createElement('canvas');
   cv.width = W * s; cv.height = H * s;
   const g = cv.getContext('2d');
   g.scale(s, s);
 
-  const css = getComputedStyle(document.documentElement);
-  const pick = (n, f) => (css.getPropertyValue(n) || f).trim();
+  const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+  const font = (weight, size) => { g.font = `${weight} ${size}px ${FONT}`; };
+  const INK = '#e8ecf4', DIM = '#8b95a8', GOLD = '#ffd233', GREEN = '#38e0a5', RED = '#ff6b6b';
 
-  g.fillStyle = '#0d1017'; g.fillRect(0, 0, W, H);
-  g.fillStyle = pick('--accent', '#ffd233');
+  g.fillStyle = '#0d1017';
+  g.fillRect(0, 0, W, H);
 
-  const F = w => `${w} 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+  // A gold rule down the left edge, so the card reads as one object.
+  g.fillStyle = GOLD;
+  g.fillRect(0, 0, 8, H);
 
-  g.font = '700 34px' + F(700).slice(3);
-  g.fillText('⚡ Speed Test', 72, 96);
+  font(700, 30);
+  g.fillStyle = GOLD;
+  g.fillText('⚡ ' + t('head.title'), 64, 78);
 
-  const v = verdict(r.down, r.up, r.ping, r.loaded ? r.loaded - r.ping : null, r.loss);
-  g.fillStyle = '#e8ecf4';
-  g.font = '650 46px' + F(650).slice(3);
-  g.fillText(v.headline, 72, 176);
+  const rise = r.loaded ? r.loaded - r.ping : null;
+  const v = verdict(r.down, r.up, r.ping, rise, r.loss);
 
-  const cols = [
-    ['DOWNLOAD', fmtSpeed(r.down), 'Mbps'],
-    ['UPLOAD',   fmtSpeed(r.up),   'Mbps'],
-    ['PING',     String(Math.round(r.ping)), 'ms']
+  font(650, 52);
+  g.fillStyle = INK;
+  g.fillText(v.headline, 64, 152);
+
+  /* The two figures people actually want, set large. */
+  const big = [
+    ['↓ ' + t('tile.down').toUpperCase(), fmtSpeed(r.down)],
+    ['↑ ' + t('tile.up').toUpperCase(),   fmtSpeed(r.up)]
   ];
-  if (r.loaded) cols.push(['PING WHEN BUSY', String(Math.round(r.loaded)), 'ms']);
+  big.forEach(([label, value], i) => {
+    const x = 64 + i * 470;
+    font(600, 22);
+    g.fillStyle = DIM;
+    g.fillText(label, x, 232);
 
-  const w = (W - 144) / cols.length;
-  cols.forEach(([label, value, unit], i) => {
-    const x = 72 + i * w;
-    g.fillStyle = '#8b95a8';
-    g.font = '600 20px' + F(600).slice(3);
-    g.fillText(label, x, 300);
-    g.fillStyle = '#e8ecf4';
-    g.font = '700 84px' + F(700).slice(3);
-    g.fillText(value, x, 386);
-    const vw = g.measureText(value).width;
-    g.fillStyle = '#8b95a8';
-    g.font = '500 26px' + F(500).slice(3);
-    g.fillText(unit, x + vw + 12, 386);
+    font(700, 132);
+    g.fillStyle = INK;
+    g.fillText(value, x, 350);
+    const w = g.measureText(value).width;
+
+    font(500, 34);
+    g.fillStyle = DIM;
+    g.fillText(t('unit.mbps'), x + w + 14, 350);
   });
 
-  g.fillStyle = '#8b95a8';
-  g.font = '400 24px' + F(400).slice(3);
-  const note = v.note.length > 96 ? v.note.slice(0, 93) + '…' : v.note;
-  g.fillText(note, 72, 470);
+  /* Everything else that makes the result worth reading. */
+  const bloat = bloatGrade(rise);
+  const small = [
+    [t('tile.ping'), Math.round(r.ping) + ' ' + t('unit.ms'), INK]
+  ];
+  if (r.loaded) {
+    small.push([t('qual.bloat'),
+                rise <= 2 ? t('card.noRise') : Math.round(r.loaded) + ' ' + t('unit.ms'),
+                bloat && (bloat[1] === 'no' ? RED : bloat[1] === 'wait' ? GOLD : GREEN)]);
+  }
+  if (r.loss != null) {
+    small.push([t('qual.loss'), r.loss.toFixed(r.loss < 1 ? 2 : 1) + '%',
+                r.loss >= 1 ? RED : r.loss >= 0.3 ? GOLD : GREEN]);
+  }
+  if (bloat) small.push(['Bufferbloat', bloat[0], bloat[1] === 'no' ? RED : bloat[1] === 'wait' ? GOLD : GREEN]);
 
-  g.fillStyle = pick('--accent', '#ffd233');
-  g.font = '600 24px' + F(600).slice(3);
-  g.fillText('iliaspa.github.io/SpeedTest', 72, 556);
+  let x = 64;
+  for (const [label, value, colour] of small) {
+    font(600, 19);
+    g.fillStyle = DIM;
+    g.fillText(label.toUpperCase(), x, 440);
+
+    font(700, 46);
+    g.fillStyle = colour || INK;
+    g.fillText(value, x, 492);
+
+    font(700, 46);
+    x += Math.max(g.measureText(value).width, (font(600, 19), g.measureText(label.toUpperCase()).width)) + 62;
+  }
+
+  // A one-line explanation, wrapped rather than cut off mid-word.
+  font(400, 23);
+  g.fillStyle = DIM;
+  const words = v.note.split(' ');
+  let line = '', y = 570;
+  for (const word of words) {
+    const next = line ? line + ' ' + word : word;
+    if (g.measureText(next).width > W - 128) {
+      g.fillText(line, 64, y);
+      y += 32;
+      line = word;
+      if (y > 602) break;
+    } else {
+      line = next;
+    }
+  }
+  if (y <= 602) g.fillText(line, 64, y);
+
+  font(600, 22);
+  g.fillStyle = GOLD;
+  g.fillText('iliaspa.github.io/SpeedTest', 64, 644);
+
+  if (r.t) {
+    font(400, 20);
+    g.fillStyle = DIM;
+    const when = new Date(r.t).toLocaleDateString(LANG);
+    g.fillText(when, W - 64 - g.measureText(when).width, 644);
+  }
 
   return cv;
 }
@@ -1285,13 +1340,13 @@ function renderResults(down, up, ping, jitter, rise, loss) {
     const ok = !missing && !pending;
 
     const li = document.createElement('li');
+    li.className = pending ? 'act wait' : ok ? 'act yes' : 'act no';
     li.innerHTML = `
       <span class="ico" aria-hidden="true">${a.icon}</span>
       <span class="body">
-        <span class="name${ok || pending ? '' : ' off'}">${t(a.k)}</span>
+        <span class="name">${t(a.k)}</span>
         <span class="note">${pending ? t('acts.waiting') : ok ? t(a.k + '.note') : missing}</span>
-      </span>
-      <span class="mark ${pending ? 'wait' : ok ? 'yes' : 'no'}">${pending ? '·' : ok ? '✓' : '✕'}</span>`;
+      </span>`;
     acts.appendChild(li);
   }
 
@@ -1347,8 +1402,9 @@ function renderQuality({ ping, rise, loaded, loss, spread, floorMbps, packets })
   const bloat = bloatGrade(rise);
   if (bloat) {
     const [letter, tone, blurb] = bloat;
-    rows.push([letter, t('qual.bloat'), tone,
-      t('qual.bloatDetail', { idle: Math.round(ping), loaded: Math.round(loaded), blurb })]);
+    rows.push([letter, t('qual.bloat'), tone, rise <= 2
+      ? t('qual.bloatFlat', { idle: Math.round(ping) })
+      : t('qual.bloatDetail', { idle: Math.round(ping), loaded: Math.round(loaded), blurb })]);
   }
 
   const lv = lossVerdict(loss);
@@ -1483,12 +1539,13 @@ function applyStaticText() {
   }
 
   const btn = $('langBtn');
-  btn.textContent = t('lang.other');
+  btn.textContent = t('lang.flag');
   btn.setAttribute('aria-label', t('lang.label'));
+  btn.title = t('lang.other');
 
   // The gauge unit and the idle button label are not static markup.
   if (!ui.go.disabled) {
-    phase(lastRender ? t('btn.done') : loadHistory().length ? t('btn.welcome') : t('btn.ready'));
+    phase(lastRender ? t('btn.done') : t('btn.ready'));
   }
   if (ui.unit.textContent) ui.unit.textContent = t('unit.mbps');
 }
@@ -1790,7 +1847,6 @@ renderHistory(false);
    so they are the right person to offer a cheaper repeat to. */
 if (loadHistory().length > 0) {
   $('quickWrap').hidden = false;
-  phase(t('btn.welcome'));
 }
 
 /* A result may have arrived in the link rather than from a test. */

@@ -9,6 +9,31 @@ The live site always serves whatever is newest on `main`:
 
 ---
 
+## v0.5.1 — Presentation
+
+**The language switch is a flag in the top-right corner**, out of the header entirely, so
+the reading sits higher up the page — it is the thing people came for. The flag shows the
+language you would switch *to*, and still carries a proper label for screen readers.
+
+**"Welcome back" is gone from the button.** Repeat visitors get the ordinary invitation;
+they are still offered quick mode. The finished label is now capitalised: *Done — Test
+again*.
+
+**Each activity is its own tinted card** — green when your line clears it, red when it does
+not — instead of a tick or cross in the margin. The colour carries the answer, but never
+alone: the line underneath still names exactly what falls short, so it survives being
+read in greyscale or by someone colour-blind.
+
+**The share image says much more, and says it bigger.** Download and upload are set at
+132 px, with ping, delay under load, packet loss and the bufferbloat grade beneath them,
+colour-coded, plus the verdict, a wrapped explanation, the URL and the date.
+
+*Also fixed:* when the line wobbles, the loaded ping can measure *lower* than the idle
+one, and the card read "ping goes 102 ms → 88 ms" — which looks like a bug rather than
+noise. Anything at or below the idle figure now reads "no measurable increase".
+
+---
+
 ## v0.5 — The rest of the roadmap
 
 **The headline verdict finally uses everything measured.** It read download and ping only,
