@@ -112,6 +112,22 @@ This matters more than it sounds. The line this was built against measured 46 Mb
 day and 1212 Mbps the next. Any single reading from any speed test is a snapshot; a dozen
 of them is evidence. Clearing them is one click, and irreversible.
 
+## Above ~500 Mbps
+
+The reading loop runs in Web Workers, one per stream, so decrypting and counting bytes
+does not compete with the page for the same thread. That is what a browser can do; it is
+not unlimited. A native client with more threads will still beat it on a multi-gigabit
+line.
+
+So the page also checks the server's own view. Cloudflare reports its kernel's
+`delivery_rate` for each connection, measured server-side and therefore immune to
+whatever this browser can or cannot keep up with. If one connection alone delivered
+faster than everything measured across all of them, the result is reported as a floor:
+*"one connection alone delivered 780 Mbps — a browser tab cannot pull harder than this,
+so treat the figure above as a floor."*
+
+Better to say the number is a lower bound than to quietly print a wrong one.
+
 ## Accuracy, honestly
 
 - It measures the path from **your browser to the nearest Cloudflare edge**. That is the

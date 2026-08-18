@@ -17,6 +17,12 @@ const CF = 'https://speed.cloudflare.com';
    network failure rather than a status code. Stay well under the line. */
 const MAX_DOWN_BYTES = 90 << 20;   // 94.4 MB
 
+/* A fetch inside a Worker fails outright above roughly 8 MB in Chromium
+   — measured: 8 MB fine, 16 MB "Failed to fetch". Workers therefore ask
+   for smaller pieces and simply ask more often; with several of them
+   running the gaps overlap and throughput stays smooth. */
+const WORKER_CHUNK_MAX = 8 << 20;
+
 const CFG = {
   ping: { count: 10, warmup: 2, minSamples: 5, maxMs: 3500, timeoutMs: 3000 },
 
@@ -25,8 +31,8 @@ const CFG = {
     probeBytes: 8 << 20,      // a fixed 1 MB costs a slow line seconds
     warmupMs:   700,          // ignored: TCP slow start / TLS ramp
     minMs:      1600,         // never trust a shorter sample
-    maxMs:      7000,
-    maxBytes:   120 << 20,    // hard ceiling on data spent
+    maxMs:      12000,        // runaway guard, not a measurement limit
+    maxBytes:   400 << 20,    // ditto: convergence normally stops long before
     fastMbps:   200,          // above this, shorten the window — see below
     chunkMs:    1500,         // aim each request at ~1.5 s of transfer
     settleTol:  0.035,        // stop when the running median moves < 3.5 %
@@ -41,8 +47,8 @@ const CFG = {
     probeMax:   2 << 20,      // cannot be cut short once it is in flight
     warmupMs:   600,
     minMs:      1800,
-    maxMs:      7000,
-    maxBytes:   60 << 20,
+    maxMs:      12000,
+    maxBytes:   200 << 20,
     chunkMs:    500,          // short posts: the blind tail stays small
     settleTol:  0.045,
     settleFor:  6,
@@ -231,9 +237,9 @@ class Sampler {
    otherwise whichever connection we happened to ask last decides the
    answer, and a fresh one reports almost nothing. */
 const tcpConns = new Map();     // cid -> { sent, retrans, minRtt }
+let peakServerRate = 0;         // best single-connection rate the server saw
 
-function noteTcp(res) {
-  const raw = res.headers.get('server-timing');
+function noteTcpRaw(raw) {
   if (!raw) return;
 
   const m = /cfL4;desc="\?([^"]+)"/.exec(raw);
@@ -242,6 +248,12 @@ function noteTcp(res) {
   const f = Object.fromEntries(m[1].split('&').map(p => p.split('=')));
   const cid  = f.cid || 'unknown';
   const sent = +f.sent || 0;
+
+  // delivery_rate is the sending kernel's own estimate of the rate it
+  // achieved, in bytes/sec. It is measured on the server, so it is not
+  // subject to anything this browser is or is not fast enough to do.
+  const rate = +f.delivery_rate || 0;
+  if (rate > peakServerRate) peakServerRate = rate;
 
   // Counters only ever grow on a given connection, so the largest
   // reading is the most complete one.
@@ -255,6 +267,8 @@ function noteTcp(res) {
   }
 }
 
+function noteTcp(res) { noteTcpRaw(res.headers.get('server-timing')); }
+
 function tcpTotals() {
   let sent = 0, retrans = 0, minRtt = Infinity;
   for (const c of tcpConns.values()) {
@@ -265,13 +279,27 @@ function tcpTotals() {
   return { sent, retrans, minRtt: isFinite(minRtt) ? minRtt : 0, conns: tcpConns.size };
 }
 
-function resetTcp() { tcpConns.clear(); }
+function resetTcp() { tcpConns.clear(); peakServerRate = 0; }
 
 /** Loss as a percentage of packets sent, or null if too little moved. */
 function lossPercent() {
   const t = tcpTotals();
   if (t.sent < 200) return null;
   return (t.retrans / t.sent) * 100;
+}
+
+/**
+ * Did the browser, rather than the line, decide the answer?
+ *
+ * peakServerRate is what a *single* connection's kernel says it achieved.
+ * If one connection alone out-ran everything this page managed to
+ * measure across all of them, the number below is a floor, not a
+ * ceiling — the line has more to give than a browser tab can take.
+ */
+function browserLimited(measuredMbps) {
+  const serverMbps = toMbps(peakServerRate);
+  if (!(serverMbps > 0) || !(measuredMbps > 0)) return null;
+  return serverMbps > measuredMbps * 1.3 ? serverMbps : null;
 }
 
 /**
@@ -445,7 +473,7 @@ async function measureDownload(onProgress) {
     MAX_DOWN_BYTES
   ));
 
-  /* ── Measure: parallel streams, abort as soon as it settles ── */
+  /* ── Measure: parallel streams, stop as soon as it settles ── */
   const ctl = new AbortController();
   const meas = new Sampler();
   meas.start();
@@ -454,17 +482,26 @@ async function measureDownload(onProgress) {
   // exactly when latency matters and exactly when nobody measures it.
   const loaded = pingUnderLoad(ctl.signal);
 
-  const workers = pool(streams, async () => {
-    while (!ctl.signal.aborted) {
-      await streamDown(chunk, ctl.signal, n => meas.add(n));
-    }
-  });
+  // Off the main thread when possible, so the reading loop stops
+  // competing with the page for the very cycles it is timing.
+  const useWorkers = await canUseWorkers();
+
+  const driver = useWorkers
+    ? workerDriver(streams, chunk, n => meas.add(n))
+    : (() => {
+        const d = pool(streams, async () => {
+          while (!ctl.signal.aborted) {
+            await streamDown(chunk, ctl.signal, n => meas.add(n));
+          }
+        });
+        return { get error() { return d.error; }, done: d.done, stop: () => ctl.abort() };
+      })();
 
   const spent = () => sampler.bytes + meas.bytes;
   const settle = new Convergence(c.settleTol, c.settleFor);
   const t0 = now();
 
-  while (!ctl.signal.aborted) {
+  for (;;) {
     await sleep(c.sampleMs);
     const elapsed = now() - t0;
     const rate = meas.tick(c.windowMs);
@@ -478,12 +515,23 @@ async function measureDownload(onProgress) {
                 elapsed >= minMs && meas.rates.length >= minRates;
     }
 
-    if (workers.error || settled || elapsed >= c.maxMs || spent() >= c.maxBytes) break;
+    if (driver.error || settled || elapsed >= c.maxMs || spent() >= c.maxBytes) break;
   }
 
-  ctl.abort();
-  await workers.done;
-  if (workers.error && !meas.rates.length) throw workers.error;
+  driver.stop();
+  ctl.abort();                       // stops the loaded-latency pings too
+  if (driver.done) await driver.done;
+
+  // Workers died before telling us anything: fall back to the main
+  // thread and measure again rather than failing the whole test.
+  if (driver.error && !meas.rates.length) {
+    if (useWorkers) {
+      workersUsable = false;
+      return measureDownload(onProgress);
+    }
+    throw driver.error;
+  }
+
 
   // Now that the streams are done, read what the server's stack recorded.
   await sampleTcp();
@@ -501,6 +549,123 @@ async function measureDownload(onProgress) {
     samples: meas.rates.length,
     loaded: median(loaded)
   };
+}
+
+
+/* ===========================================================
+   Download drivers
+
+   Reading a stream costs main-thread time: every chunk is a JS callback,
+   and TLS decryption lands on the same thread as the page. Below a few
+   hundred Mbps that is free, because the line is the bottleneck. Past
+   it the browser becomes the bottleneck and the test measures itself
+   instead of the connection.
+
+   So the work moves off the main thread — one worker per stream, each
+   fetching and draining independently, reporting only totals. Falls
+   back to the main thread wherever workers cannot be created.
+   =========================================================== */
+
+const DOWN_WORKER_SRC = `
+self.onmessage = async (e) => {
+  const base = e.data.base, bytes = e.data.bytes;
+  let pending = 0, misses = 0;
+
+  const flush = () => { if (pending) { self.postMessage({ n: pending }); pending = 0; } };
+  const timer = setInterval(flush, 100);
+
+  // A dropped request is not the end of the measurement: other streams
+  // are still running, and the line often recovers immediately. Only
+  // give up after several consecutive failures.
+  for (;;) {
+    try {
+      const res = await fetch(base + '?bytes=' + bytes + '&r=' + Math.random(),
+                              { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+
+      const st = res.headers.get('server-timing');
+      if (st) self.postMessage({ st: st });
+
+      const rd = res.body.getReader();
+      for (;;) {
+        const r = await rd.read();
+        if (r.done) break;
+        pending += r.value.length;
+      }
+      misses = 0;
+    } catch (err) {
+      if (++misses >= 3) {
+        clearInterval(timer);
+        flush();
+        self.postMessage({ error: String((err && err.message) || err) });
+        return;
+      }
+      await new Promise(r => setTimeout(r, 150));
+    }
+  }
+};
+`;
+/** One worker per stream. Stopping is a terminate, which kills the
+    transfer instantly — the same "stop the moment we know" behaviour
+    the AbortController gives on the main thread. */
+function workerDriver(streams, chunk, onBytes) {
+  const blobUrl = URL.createObjectURL(
+    new Blob([DOWN_WORKER_SRC], { type: 'text/javascript' })
+  );
+
+  const driver = { error: null, stop: null, workers: [], dead: 0 };
+
+  for (let i = 0; i < streams; i++) {
+    const w = new Worker(blobUrl);
+    w.onmessage = ev => {
+      const d = ev.data;
+      if (d.n) onBytes(d.n);
+      else if (d.st) noteTcpRaw(d.st);
+      // One stream giving up is survivable; all of them is not.
+      else if (d.error && ++driver.dead >= streams) driver.error = new Error(d.error);
+    };
+    w.onerror = () => {
+      if (++driver.dead >= streams) driver.error = new Error('workers failed');
+    };
+    w.postMessage({ base: `${CF}/__down`, bytes: Math.min(chunk, WORKER_CHUNK_MAX) });
+    driver.workers.push(w);
+  }
+
+  driver.stop = () => {
+    for (const w of driver.workers) w.terminate();
+    URL.revokeObjectURL(blobUrl);
+  };
+
+  return driver;
+}
+
+/** Are workers usable at all? Blob-URL workers are blocked by some
+    content policies, so prove one starts before relying on them. */
+let workersUsable = null;
+
+async function canUseWorkers() {
+  if (workersUsable !== null) return workersUsable;
+
+  workersUsable = await new Promise(resolve => {
+    if (typeof Worker === 'undefined') return resolve(false);
+    let url;
+    try {
+      url = URL.createObjectURL(
+        new Blob(['self.onmessage=()=>self.postMessage(1)'], { type: 'text/javascript' })
+      );
+      const w = new Worker(url);
+      const done = ok => { try { w.terminate(); URL.revokeObjectURL(url); } catch {} resolve(ok); };
+      const timer = setTimeout(() => done(false), 1500);
+      w.onmessage = () => { clearTimeout(timer); done(true); };
+      w.onerror   = () => { clearTimeout(timer); done(false); };
+      w.postMessage(0);
+    } catch {
+      if (url) URL.revokeObjectURL(url);
+      resolve(false);
+    }
+  });
+
+  return workersUsable;
 }
 
 /* ===========================================================
@@ -1004,6 +1169,13 @@ function renderQuality(idlePing, dl, ul) {
     rows.push(['⇄', 'Packet loss', tone,
       `${text} — the server resent ${t.retrans.toLocaleString()} of the ` +
       `${t.sent.toLocaleString()} packets it sent you`]);
+  }
+
+  const floorMbps = browserLimited(dl.mbps);
+  if (floorMbps) {
+    rows.push(['↑', 'Faster than this page can measure', 'wait',
+      `one connection alone delivered ${fmtSpeed(floorMbps)} Mbps — a browser tab ` +
+      `cannot pull harder than this, so treat the figure above as a floor`]);
   }
 
   const [word, tone, blurb] = steadiness(Math.max(dl.spread || 0, ul.spread || 0));

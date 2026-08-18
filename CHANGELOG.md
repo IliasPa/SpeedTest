@@ -9,6 +9,43 @@ The live site always serves whatever is newest on `main`:
 
 ---
 
+## v0.4.1 — Off the main thread, and off the leash
+
+**The reading loop moved into Web Workers.** Every chunk of a download used to be a
+JavaScript callback on the same thread as the page, with TLS decryption alongside it.
+Below a few hundred Mbps that costs nothing, because the line is the bottleneck. Past
+that the browser becomes the bottleneck and the test starts measuring itself. Now each
+stream gets its own worker, built from a Blob URL so the page stays three static files
+with no build step.
+
+**The ceilings became guards rather than limits.** The download cap went from 120 MB to
+400 MB and the clock from 7 s to 12 s. At gigabit the old 120 MB was reached in about a
+second, which cut the measurement off before it had settled — that truncation was part
+of why fast lines read erratically. Convergence still stops most runs long before any
+of these are touched; measured here, runs spent 39–75 MB. Data Saver mode is unchanged
+at ~22 MB.
+
+**The page can now tell you when *it* is the limit.** The server reports its own kernel's
+`delivery_rate` per connection. If a single connection alone out-ran everything measured
+across all of them, the figure is a floor rather than a ceiling, and the page says so
+instead of quietly under-reporting.
+
+*Two things found by measuring rather than assuming:*
+
+- **A fetch inside a Worker fails outright above ~8 MB in Chromium.** 8 MB fine, 16 MB
+  `Failed to fetch`. Workers therefore request smaller pieces more often. This cost three
+  broken runs before it was found.
+- **One worker dying used to kill the whole test.** Workers now retry, the driver only
+  gives up when every stream has failed, and even then it falls back to the main thread
+  and measures again rather than failing.
+
+*Honest note:* the worker path is verified working and engaged, but its benefit could not
+be demonstrated on the connection this was built against — at 115–306 Mbps the main thread
+was never the constraint, and frame timing was identical either way (p50 16.7 ms, no long
+frames, both paths). The gain is real above roughly 500 Mbps; it is simply unproven here.
+
+---
+
 ## v0.4 — Trustworthiness
 
 v0.3 added metrics nobody else surfaces, but they sat on top of a number that swung
